@@ -68,7 +68,7 @@ def _date_parts(fiscal_year: str, fiscal_month_num: int) -> Dict[str, object]:
         "calendar_month": cal_month,
         "calendar_month_name": calendar_month_name,
         "fiscal_month_name": fiscal_month_name,
-        "month_start": month_start.isoformat(),
+        "month_start": pd.Timestamp(month_start),
         "date_key": date_key,
     }
 
