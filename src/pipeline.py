@@ -1,6 +1,5 @@
 from __future__ import annotations
-import json
-import os
+
 import platform
 import random
 from datetime import date
@@ -11,24 +10,22 @@ import duckdb
 import pandas as pd
 from rich import print as rprint
 
+from .build_facts import build_run_facts, build_change_facts
 from .config import (
     SERVICES, BUSINESS_UNITS, FISCAL_YEARS, CURRENCY,
-    TOWERS, PROJECTS, PROJECT_BUDGETS,
-)
-from .models import (
-    ServicePrice, ProjectDef, FactRunRow, FactChangeRow,
-    ServiceDocMeta, ProjectDocMeta, ProjectAllocation,
-)
+    TOWERS, APP_SERVICE_MAP, DIM_APPS, )
+from .embedder import Embedder
 from .gen_prices import gen_service_prices
 from .gen_projects import gen_projects
 from .gen_quantities import gen_run_quantities
-from .build_facts import build_run_facts, build_change_facts
+from .models import (
+    ServicePrice, ProjectDef, FactRunRow, FactChangeRow,
+    ServiceDocMeta, ProjectDocMeta, )
+from .pdf_project_brief import render_project_brief_pdf
+from .pdf_service_agreement import render_service_agreement_pdf
 from .validate import (
     validate_price_constancy, validate_pxq, validate_project_totals
 )
-from .pdf_service_agreement import render_service_agreement_pdf
-from .pdf_project_brief import render_project_brief_pdf
-from .embedder import Embedder
 
 
 # =========================
@@ -326,37 +323,65 @@ def run_pipeline():
     rprint("[bold]10) Render PDFs per Service & Project + Embed + Delete[/bold]")
     emb = Embedder(_base_dir())  # persist near base_dir
 
-    for s in SERVICES:
-        sid = s["service_id"]
-        for fy in FISCAL_YEARS:
-            price_curr = next(p for p in prices if p.service_id == sid and p.fiscal_year == fy)
-            price_prev: Optional[ServicePrice] = None
-            if fy == "FY25":
-                price_prev = next(p for p in prices if p.service_id == sid and p.fiscal_year == "FY24")
+    # --- PDF generation & embedding per App ---
+    for app in DIM_APPS:
+        app_id = app["app_id"]
+        app_name = app["app_name"]
+        vendor = app["vendor"]
 
-            price_delta = 0.0 if price_prev is None else (price_curr.price / price_prev.price - 1.0)
+        # Finde zugehörigen Service (aus Mapping)
+        service_id = APP_SERVICE_MAP.get(app_id)
+        service = next((s for s in SERVICES if s["service_id"] == service_id), None)
+
+        # Wenn kein Mapping existiert, fallback
+        service_name = service["service_name"] if service else "Unassigned Service"
+        tower_id = service["tower_id"] if service else "TWR-UNK"
+        unit = service["unit"] if service else "unit/month"
+
+        for fy in FISCAL_YEARS:
+            # Preise für den zugehörigen Service
+            if service:
+                price_curr = next(p for p in prices if p.service_id == service_id and p.fiscal_year == fy)
+                price_prev = None
+                if fy == "FY25":
+                    price_prev = next((p for p in prices if p.service_id == service_id and p.fiscal_year == "FY24"),
+                                      None)
+            else:
+                price_curr, price_prev = None, None
+
+            price_delta = 0.0
+            if price_curr and price_prev:
+                price_delta = price_curr.price / price_prev.price - 1.0
+
+            # Meta-Objekt für die Vektordatenbank
             meta = ServiceDocMeta(
                 fiscal_year=fy,
-                tower_id=s["tower_id"],
-                service_id=sid,
-                project_id="N/A",  # Services are not projects
-                price_fy=price_curr.price,
+                tower_id=tower_id,
+                service_id=service_id or "N/A",
+                project_id="N/A",  # Apps sind keine Projekte
+                price_fy=price_curr.price if price_curr else 0.0,
                 price_unit=f"{CURRENCY}/unit",
                 price_delta_pct_vs_prev_fy=price_delta,
             )
-            pdf_path = render_service_agreement_pdf(meta, price_curr, price_prev)
+
+            # PDF erzeugen
+            pdf_path = render_service_agreement_pdf(app, fy, price_curr, price_prev)
+
+            price_value = price_curr.price if price_curr else 0.0
+            # Textabschnitte für Embedding
             chunks = [
-                f"Overview & Scope: {s['service_name']} provides capability to BUs.",
-                f"Pricing Model & Unit: Unit={s['unit']}, Billing=PxQ, price constant per FY.",
-                (
-                        f"Price Table (FY): price_fy={price_curr.price:.4f} {CURRENCY}/unit"
-                        + (f", delta_vs_prev={price_delta:.4f}" if price_prev else "")
-                ),
-                "Change Log vs Previous FY: see price delta and scope notes.",
-                "Operational Notes: SLAs unchanged.",
+                f"Contract Overview: {app_name} provided by {vendor} as part of the {service_name} service.",
+                f"Pricing Model: {unit}, price {price_value:.2f} {CURRENCY}/unit, delta vs prev FY = {price_delta:+.2%}",
+                f"Dependencies: Identity, Network, Hosting platforms.",
+                f"SLA Summary: Availability ≥99.8%, Response ≤1h for P1 incidents.",
+                "Operational Notes: Monthly review and vendor governance apply.",
             ]
+
+            # Embedding hinzufügen
             emb.add_service_chunks(pdf_name=pdf_path.name, meta=meta, chunks=chunks)
-            pdf_path.unlink(missing_ok=True)
+
+            # PDF löschen, wenn du Speicher sparen willst
+            #pdf_path.unlink(missing_ok=True)
 
     for p in projects:
         for fy in FISCAL_YEARS:
@@ -382,7 +407,7 @@ def run_pipeline():
                 "Dependencies & Risks: none material.",
             ]
             emb.add_project_chunks(pdf_name=pdf_path.name, meta=meta, chunks=chunks)
-            pdf_path.unlink(missing_ok=True)
+            #pdf_path.unlink(missing_ok=True)
 
     rprint("[bold green]Pipeline complete.[/bold green]")
 
