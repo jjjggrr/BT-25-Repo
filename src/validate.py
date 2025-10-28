@@ -51,7 +51,8 @@ def validate_project_totals(change_rows: List[FactChangeRow], projects: List[Pro
                 continue
 
             total = round(total, 2)
-            if abs(total - planned) > 10.01:
+            planned = round(planned, 2)
+            if abs(total - planned) > 0.02:
                 raise ValidationError(
                     f"Project {p.project_id} {fy} total {total} != {planned}"
                 )

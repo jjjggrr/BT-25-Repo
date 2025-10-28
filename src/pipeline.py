@@ -139,6 +139,9 @@ def _build_dim_project(projects: List[ProjectDef]) -> pd.DataFrame:
         for p in projects
     ], columns=["project_id", "project_name"])
 
+def write_csv_excel_friendly(df: pd.DataFrame, path: Path):
+    df.to_csv(path, index=False, sep=';', decimal=',', encoding='utf-8-sig')
+
 
 def _build_dim_country() -> pd.DataFrame:
     countries = [
@@ -166,6 +169,7 @@ def _final_fact_df(run_rows: List[FactRunRow], change_rows: List[FactChangeRow])
     run_df["service_cost"] = run_df["runCost"].astype(float)
     run_df["project_cost"] = 0.0
     run_df["actual_cost"] = run_df["service_cost"]
+    run_df["quantity"] = run_df["quantity"].astype(int)
     run_df["units"] = run_df["quantity"].astype(float)
     run_df["unit_cost"] = run_df["price"].astype(float)  # legacy alias
     run_df["project_quantity"] = 0.0
@@ -223,39 +227,32 @@ def _final_fact_df(run_rows: List[FactRunRow], change_rows: List[FactChangeRow])
 
 
 def _write_csvs_and_bootstrap_duckdb(files: Dict[str, pd.DataFrame]):
+    """Write DataFrames directly into DuckDB (in-memory) and
+        export Excel-friendly CSVs into base_dir for inspection."""
     base_dir = _base_dir()
     base_dir.mkdir(parents=True, exist_ok=True)
 
-    # 1) Write CSVs
+    db_path = base_dir / "tbm_demo.duckdb"
+    con = duckdb.connect(database=str(db_path), read_only=False)
+    con.execute("CREATE SCHEMA IF NOT EXISTS tbm;")
+
+    # Für jeden DataFrame
     for filename, df in files.items():
+        table_name = Path(filename).stem
+        print(f"[duckdb] Creating tbm.{table_name} from DataFrame ({len(df)} rows)")
+
+        # --- 1) Direkt in-Memory nach DuckDB ---
+        con.register('temp_df', df)
+        con.execute(f"CREATE OR REPLACE TABLE tbm.{table_name} AS SELECT * FROM temp_df;")
+        con.unregister('temp_df')
+
+        # --- 2) Zusätzlich Excel-freundlich exportieren (im base_dir) ---
         out_path = base_dir / filename
-        df.to_csv(out_path, index=False)
+        write_csv_excel_friendly(df, out_path)
         rprint(f"[cyan]CSV[/cyan] → {out_path}")
 
-    # 2) Generate SQL bootstrap
-    sql_script_path = base_dir / "refresh_duckdb.sql"
-    db_path = base_dir / "tbm_demo.duckdb"
-
-    with open(sql_script_path, "w", encoding="utf-8") as f:
-        f.write("DROP SCHEMA IF EXISTS tbm CASCADE;\n")
-        f.write("CREATE SCHEMA tbm;\n")
-        for table_name in files.keys():
-            duckdb_table_name = Path(table_name).stem
-            csv_path = str((base_dir / table_name).as_posix())
-            f.write(
-                f"CREATE TABLE tbm.{duckdb_table_name} AS SELECT * FROM read_csv_auto('{csv_path}');\n"
-            )
-
-    # 3) Execute SQL bootstrap
-    try:
-        with duckdb.connect(database=str(db_path), read_only=False) as con:
-            with open(sql_script_path, "r", encoding="utf-8") as f:
-                sql_script = f.read()
-                con.execute(sql_script)
-        rprint(f"[green]Successfully refreshed DuckDB[/green] → '{db_path}'")
-    except Exception as e:
-        rprint(f"[red]DuckDB refresh failed:[/red] {e}")
-        raise
+    con.close()
+    rprint(f"[green]DuckDB refresh complete (in-memory, Excel-friendly CSVs in '{base_dir}')[/green]")
 
 
 # =========================

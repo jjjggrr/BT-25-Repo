@@ -77,101 +77,113 @@ def _monthly_weights(fiscal_year: str, mode: str) -> List[float]:
 
 
 def build_change_facts(projects: List[ProjectDef], run_rows: List[FactRunRow]) -> List[FactChangeRow]:
-    """
-    Builds CHANGE facts (project costs) with TBM-correct logic:
-      - Tower = TWR-06 (Change)
-      - Service = SRV-CHG
-      - CHANGE is not App-based (app_id=None)
-      - CHANGE has no unit-model (quantity=None)
-      - Project costs are allocated per FY proportional to RUN consumption in the *same* FY
-      - Only countries where the BU (org_id) actually has RUN in that FY receive costs
-      - CostCenter is derived exactly as in RUN via (country, org) mapping
-      - FY24: if a BU has no RUN in FY24 → no share of FY24 project costs
-      - FY25: if the BU has RUN in FY25 → gets share in FY25
-      - Monthly weighting is FY-dependent (late-heavy FY24, moderate FY25+)
-    """
+    """Build yearly CHANGE (project) facts, allocate per BU and country proportional to RUN usage,
+    and apply rounding correction once per FY (in month 12) to the country with the highest usage."""
 
-    from .config import FISCAL_YEARS, PROJECT_MONTHLY_DISTRIBUTION, COST_CENTER_BY_COUNTRY_AND_ORG
-    from .models import FactChangeRow
-
-    # --- 1) aggregate RUN consumption by FY / ORG / COUNTRY ---
-    run_qty = _aggregate_run_qty_by_fy_org_country(run_rows)
-
+    weights = [1 / 12.0] * 12  # flat monthly distribution
     change_rows: List[FactChangeRow] = []
 
-    # --- 2) iterate projects ---
+    # --- RUN usage lookup per (BU, country) ---
+    run_usage: Dict[tuple, float] = {}
+    for r in run_rows:
+        key = (r.org_id, r.country_code)
+        run_usage[key] = run_usage.get(key, 0.0) + float(r.runCost or 0.0)
+
+    # yearly accumulator for rounding correction
+    yearly_accumulator: Dict[tuple, float] = {}
+
     for p in projects:
-        for fy in FISCAL_YEARS:
-
-            # project exists in this FY?
-            exists = (fy == "FY24" and p.exists_fy24) or (fy == "FY25" and p.exists_fy25)
-            if not exists:
+        for fy in ["FY24", "FY25"]:
+            if not ((fy == "FY24" and p.exists_fy24) or (fy == "FY25" and p.exists_fy25)):
                 continue
 
-            # total capex for this FY
-            total_fy = p.cost_fy24 if fy == "FY24" else p.cost_fy25
-            if total_fy <= 0:
+            total_year_cost = p.cost_fy24 if fy == "FY24" else p.cost_fy25
+            if total_year_cost == 0:
                 continue
 
-            # monthly weights (late-heavy in FY24, moderate in FY25+)
-            weights = _monthly_weights(fy, PROJECT_MONTHLY_DISTRIBUTION)
-
-            # --- 3) each Org allocation (BU share) ---
-            for alloc in p.allocation:  # allocation is still list[dict]
+            for alloc in p.allocation:
                 org_id = alloc.org_id
-                bu_share = float(alloc.share)
-                if bu_share <= 0:
+                share_bu = alloc.share
+                # Anteil des Jahresbudgets für diese BU
+                bu_budget = total_year_cost * share_bu
+
+                # --- Länderanteile pro BU aus RUN ableiten ---
+                # filtere alle RUN-Zeilen dieser BU
+                bu_countries = {cc: cost for (org, cc), cost in run_usage.items() if org == org_id}
+                total_bu_run = sum(bu_countries.values())
+
+                if total_bu_run <= 0:
                     continue
 
-                bu_year_amount = total_fy * bu_share
+                # Land mit höchstem Verbrauch (für Korrektur am Jahresende)
+                max_country = max(bu_countries.items(), key=lambda kv: kv[1])[0]
 
-                # --- 4) does this BU have ANY consumption in this FY? ---
-                org_ctry_qty = run_qty.get(fy, {}).get(org_id, {})
-                if not org_ctry_qty:
-                    # no consumption → no share of project in this FY
-                    continue
+                # Monatsverteilung
+                for month_idx, weight in enumerate(weights, start=1):
+                    month_amount = bu_budget * weight
+                    month_split = {}
+                    sum_month = 0.0
 
-                qty_total = sum(org_ctry_qty.values())
-                if qty_total <= 0:
-                    continue
+                    for country_code, run_cost in bu_countries.items():
+                        share_ctry = run_cost / total_bu_run
+                        amt = round(month_amount * share_ctry, 2)
+                        month_split[country_code] = amt
+                        sum_month += amt
 
-                # --- 5) allocate per month ---
-                for m, w in enumerate(weights, start=1):
-                    month_amount = bu_year_amount * w
-                    if month_amount <= 0:
-                        continue
+                    # Sammle Jahressumme pro BU/Land
+                    for country_code, amt in month_split.items():
+                        key = (p.project_id, fy, org_id, country_code)
+                        yearly_accumulator[key] = yearly_accumulator.get(key, 0.0) + amt
 
-                    # --- 6) split per country proportional to qty share ---
-                    for country_code, qty in org_ctry_qty.items():
-                        if qty <= 0:
-                            continue
-
-                        share = qty / qty_total
-                        amt = round(month_amount * share, 2)
-                        if amt <= 0:
-                            continue
-
-                        cc_id = COST_CENTER_BY_COUNTRY_AND_ORG.get((country_code, org_id))
-                        if not cc_id:
-                            continue  # safety, should not happen
-
-                        # --- 7) create FactChangeRow ---
                         change_rows.append(
                             FactChangeRow(
                                 fiscal_year=fy,
-                                fiscal_month_num=m,
+                                fiscal_month_num=month_idx,
                                 project_id=p.project_id,
                                 tower_id="TWR-06",
                                 service_id="SRV-CHG",
                                 org_id=org_id,
                                 country_code=country_code,
-                                cost_center_id=cc_id,
-                                app_id=None,     # change != app
-                                quantity=None,   # change != unit-based
+                                cost_center_id="N/A",
+                                app_id=None,
+                                quantity=None,
                                 project_cost=amt,
                             )
                         )
 
+                    # --- End-of-year rounding correction (month 12 only) ---
+                    if month_idx == 12:
+                        # berechne geplante Jahressumme für diese BU
+                        planned_bu = round(bu_budget, 2)
+                        actual_bu = round(sum(
+                            v for (pid, fyy, org, _), v in yearly_accumulator.items()
+                            if pid == p.project_id and fyy == fy and org == org_id
+                        ), 2)
+                        delta = round(planned_bu - actual_bu, 2)
+
+                        if abs(delta) >= 0.01:
+                            print(
+                                f"[Rounding correction] Project {p.project_id} {fy} | "
+                                f"BU={org_id} | Country={max_country} | Delta={delta:+.2f}"
+                            )
+                            # Füge Delta dem Land mit dem höchsten Verbrauch hinzu
+                            change_rows.append(
+                                FactChangeRow(
+                                    fiscal_year=fy,
+                                    fiscal_month_num=12,
+                                    project_id=p.project_id,
+                                    tower_id="TWR-06",
+                                    service_id="SRV-CHG",
+                                    org_id=org_id,
+                                    country_code=max_country,
+                                    cost_center_id="N/A",
+                                    app_id=None,
+                                    quantity=None,
+                                    project_cost=delta,
+                                )
+                            )
+
     return change_rows
+
 
 
