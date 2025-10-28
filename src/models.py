@@ -2,6 +2,7 @@ from __future__ import annotations
 from pydantic import BaseModel, Field, field_validator
 from typing import List, Dict, Optional, Literal
 
+
 # === Data Records ===
 
 class ServicePrice(BaseModel):
@@ -10,9 +11,11 @@ class ServicePrice(BaseModel):
     price: float
     unit: str  # e.g., "EUR/unit"
 
+
 class ProjectAllocation(BaseModel):
     org_id: str
     share: float
+
 
 class ProjectDef(BaseModel):
     project_id: str
@@ -31,13 +34,14 @@ class ProjectDef(BaseModel):
             raise ValueError(f"Allocation shares must sum to 1.0, got {s}")
         return v
 
+
 class FactRunRow(BaseModel):
     fiscal_year: str
     fiscal_month_num: int
     tower_id: str
     service_id: str
     org_id: str
-    country_code: str         # NEU
+    country_code: str  # NEU
     app_id: str
     cost_center_id: str
     price: float
@@ -50,13 +54,19 @@ class FactChangeRow(BaseModel):
     fiscal_month_num: int
     project_id: str
     tower_id: str
-    service_id: Optional[str] = None  # if project is service-related
+    service_id: Optional[str] = None
     org_id: str
+    country_code: str  # <-- NEU
+    cost_center_id: str  # <-- NEU
+    app_id: Optional[str] = None  # <-- NEU
+    quantity: Optional[float] = None  # <-- NEU
     project_cost: float
+
 
 # === Embedding Metadata ===
 DocType = Literal["service_agreement", "project_brief"]
 Granularity = Literal["tower", "service", "bu", "project"]
+
 
 class ServiceDocMeta(BaseModel):
     doc_type: Literal["service_agreement"] = "service_agreement"
@@ -75,6 +85,7 @@ class ServiceDocMeta(BaseModel):
     generated_at_utc: Optional[str] = None
     validated_against_cube: Optional[bool] = None
     validation_report_id: Optional[str] = None
+
 
 class ProjectDocMeta(BaseModel):
     doc_type: Literal["project_brief"] = "project_brief"

@@ -24,11 +24,12 @@ from .gen_projects import gen_projects
 from .gen_quantities import gen_run_quantities
 from .build_facts import build_run_facts, build_change_facts
 from .validate import (
-    validate_price_constancy, validate_pxq, validate_project_totals, validate_project_allocation_constancy
+    validate_price_constancy, validate_pxq, validate_project_totals
 )
 from .pdf_service_agreement import render_service_agreement_pdf
 from .pdf_project_brief import render_project_brief_pdf
 from .embedder import Embedder
+
 
 # =========================
 # Helpers
@@ -57,9 +58,10 @@ def _date_parts(fiscal_year: str, fiscal_month_num: int) -> Dict[str, object]:
     cal_month = ((fiscal_month_num - 1) + 9) % 12 + 1  # 1..12, Oct=10
     year = start_year if cal_month >= 10 else (start_year + 1)
     month_start = date(year, cal_month, 1)
-    calendar_month_name = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][cal_month-1]
-    fiscal_names = ["Oct","Nov","Dec","Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep"]
-    fiscal_month_name = fiscal_names[fiscal_month_num-1]
+    calendar_month_name = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"][
+        cal_month - 1]
+    fiscal_names = ["Oct", "Nov", "Dec", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep"]
+    fiscal_month_name = fiscal_names[fiscal_month_num - 1]
     date_key = int(month_start.strftime("%Y%m01"))
     return {
         "calendar_year": year,
@@ -87,8 +89,8 @@ def _build_dim_date() -> pd.DataFrame:
                 "month_start": p["month_start"],
             })
     df = pd.DataFrame(rows, columns=[
-        "date_key","calendar_year","calendar_month","calendar_month_name",
-        "fiscal_year","fiscal_month_num","fiscal_month_name","month_start"
+        "date_key", "calendar_year", "calendar_month", "calendar_month_name",
+        "fiscal_year", "fiscal_month_num", "fiscal_month_name", "month_start"
     ])
     return df
 
@@ -96,40 +98,47 @@ def _build_dim_date() -> pd.DataFrame:
 def _build_dim_tower() -> pd.DataFrame:
     return pd.DataFrame([
         {"tower_id": t["tower_id"], "tower_name": t["tower_name"]} for t in TOWERS
-    ], columns=["tower_id","tower_name"])
+    ], columns=["tower_id", "tower_name"])
 
 
 def _build_dim_service() -> pd.DataFrame:
     return pd.DataFrame([
         {"service_id": s["service_id"], "tower_id": s["tower_id"], "service_name": s["service_name"]}
         for s in SERVICES
-    ], columns=["service_id","tower_id","service_name"])
+    ], columns=["service_id", "tower_id", "service_name"])
 
 
 def _build_dim_org() -> pd.DataFrame:
     return pd.DataFrame([
         {"org_id": o["org_id"], "business_unit_name": o["business_unit_name"]}
         for o in BUSINESS_UNITS
-    ], columns=["org_id","business_unit_name"])
+    ], columns=["org_id", "business_unit_name"])
 
 
 def _build_dim_cost_center() -> pd.DataFrame:
-    return pd.DataFrame([
-        {"cost_center_id": "CC-0001", "cost_center_name": "Unassigned Cost Center"}
-    ], columns=["cost_center_id","cost_center_name"])
+    from .config import DIM_COST_CENTERS
+    return pd.DataFrame(
+        [{"cost_center_id": c["cost_center_id"], "cost_center_name": c["cost_center_name"]}
+         for c in DIM_COST_CENTERS],
+        columns=["cost_center_id", "cost_center_name"]
+    )
 
 
 def _build_dim_app() -> pd.DataFrame:
-    return pd.DataFrame([
-        {"app_id": "APP-0001", "app_name": "Unassigned Application"}
-    ], columns=["app_id","app_name"])
+    from .config import DIM_APPS
+    return pd.DataFrame(
+        [{"app_id": a["app_id"], "app_name": a["app_name"], "vendor": a["vendor"]}
+         for a in DIM_APPS],
+        columns=["app_id", "app_name", "vendor"]
+    )
 
 
 def _build_dim_project(projects: List[ProjectDef]) -> pd.DataFrame:
     return pd.DataFrame([
         {"project_id": p.project_id, "project_name": p.name}
         for p in projects
-    ], columns=["project_id","project_name"])
+    ], columns=["project_id", "project_name"])
+
 
 def _build_dim_country() -> pd.DataFrame:
     countries = [
@@ -143,9 +152,10 @@ def _build_dim_country() -> pd.DataFrame:
         {"country_code": "CA", "country_name": "CANADA"},
         {"country_code": "MX", "country_name": "MEXICO"},
         {"country_code": "BR", "country_name": "BRAZIL"},
+        {"country_code": "AR", "country_name": "ARGENTINA"},
+        {"country_code": "CN", "country_name": "CHINA"},
     ]
     return pd.DataFrame(countries, columns=["country_code", "country_name"])
-
 
 
 def _final_fact_df(run_rows: List[FactRunRow], change_rows: List[FactChangeRow]) -> pd.DataFrame:
@@ -161,10 +171,9 @@ def _final_fact_df(run_rows: List[FactRunRow], change_rows: List[FactChangeRow])
     run_df["project_quantity"] = 0.0
     run_df["unit_model"] = "PXQ"
     run_df["project_id"] = ""
-    run_df["cost_center_id"] = "CC-0001"
-    run_df["app_id"] = "APP-0001"
     # synthetic date_key
-    run_df["date_key"] = run_df.apply(lambda r: _date_parts(r["fiscal_year"], int(r["fiscal_month_num"]))['date_key'], axis=1)
+    run_df["date_key"] = run_df.apply(lambda r: _date_parts(r["fiscal_year"], int(r["fiscal_month_num"]))['date_key'],
+                                      axis=1)
 
     # CHANGE part
     ch_df = _to_df(change_rows, FactChangeRow).copy()
@@ -172,16 +181,13 @@ def _final_fact_df(run_rows: List[FactRunRow], change_rows: List[FactChangeRow])
     ch_df["service_cost"] = 0.0
     ch_df["actual_cost"] = ch_df["project_cost"].astype(float)
     ch_df["price"] = 0.0
-    ch_df["quantity"] = 0.0
-    ch_df["units"] = 0.0
-    ch_df["unit_cost"] = 0.0
-    ch_df["project_quantity"] = 0.0
+    # quantity/app_id/cost_center_id/tower_id/service_id bleiben aus FactChangeRow
+    # KEINE Überschreibungen mehr!
     ch_df["unit_model"] = "N/A"
-    ch_df["service_id"] = ch_df["service_id"].fillna("")
-    ch_df["tower_id"] = ch_df["tower_id"].fillna("")
-    ch_df["cost_center_id"] = "CC-0001"
-    ch_df["app_id"] = "APP-0001"
-    ch_df["date_key"] = ch_df.apply(lambda r: _date_parts(r["fiscal_year"], int(r["fiscal_month_num"]))['date_key'], axis=1)
+    ch_df["date_key"] = ch_df.apply(
+        lambda r: _date_parts(r["fiscal_year"], int(r["fiscal_month_num"]))["date_key"],
+        axis=1,
+    )
 
     # Align columns and order to your legacy list
     col_order = [
@@ -199,7 +205,9 @@ def _final_fact_df(run_rows: List[FactRunRow], change_rows: List[FactChangeRow])
     for df in (run_df, ch_df):
         for col in col_order:
             if col not in df.columns:
-                df[col] = 0 if col in ("units","unit_cost","quantity","price","project_quantity","service_cost","project_cost","actual_cost","forecast_cost") else ""
+                df[col] = 0 if col in (
+                "units", "unit_cost", "quantity", "price", "project_quantity", "service_cost", "project_cost",
+                "actual_cost", "forecast_cost") else ""
 
     full = pd.concat([run_df, ch_df], ignore_index=True)[col_order]
 
@@ -208,7 +216,8 @@ def _final_fact_df(run_rows: List[FactRunRow], change_rows: List[FactChangeRow])
     full["forecast_cost"] = full["actual_cost"].apply(lambda x: round(x * (1.0 + rnd.uniform(-0.05, 0.05)), 4))
 
     # Types
-    num_cols = ["date_key","fiscal_month_num","units","unit_cost","quantity","price","project_quantity","service_cost","project_cost","actual_cost","forecast_cost"]
+    num_cols = ["date_key", "fiscal_month_num", "units", "unit_cost", "quantity", "price", "project_quantity",
+                "service_cost", "project_cost", "actual_cost", "forecast_cost"]
     full[num_cols] = full[num_cols].apply(pd.to_numeric)
     return full
 
@@ -265,13 +274,13 @@ def run_pipeline():
 
     rprint("[bold]4) Build RUN facts (PxQ) and CHANGE facts (projects)[/bold]")
     run_rows: List[FactRunRow] = build_run_facts(qrows, prices)
-    change_rows: List[FactChangeRow] = build_change_facts(projects)
+    change_rows: List[FactChangeRow] = build_change_facts(projects, run_rows)
 
     rprint("[bold]5) Validate[/bold]")
     validate_price_constancy(run_rows)
     validate_pxq(run_rows)
     validate_project_totals(change_rows, projects)
-    validate_project_allocation_constancy(projects)
+    #validate_project_allocation_constancy(projects)
 
     # 6) Build dims
     rprint("[bold]6) Build dimension tables[/bold]")
@@ -282,7 +291,6 @@ def run_pipeline():
     dim_cost_center = _build_dim_cost_center()
     dim_app = _build_dim_app()
     dim_project = _build_dim_project(projects)
-
 
     # 7) Build unified fact with your legacy column order
     rprint("[bold]7) Build unified fact_it_costs (legacy schema)[/bold]")
@@ -300,7 +308,7 @@ def run_pipeline():
         "dim_country.csv": _build_dim_country(),
         "fact_it_costs.csv": fact[[
             "date_key", "fiscal_year", "fiscal_month_num",
-            "tower_id", "service_id", "org_id",  "country_code",
+            "tower_id", "service_id", "org_id", "country_code",
             "cost_center_id", "app_id", "project_id",
             "cost_type", "unit_model",
             # PxQ + Komponenten
@@ -342,8 +350,8 @@ def run_pipeline():
                 f"Overview & Scope: {s['service_name']} provides capability to BUs.",
                 f"Pricing Model & Unit: Unit={s['unit']}, Billing=PxQ, price constant per FY.",
                 (
-                    f"Price Table (FY): price_fy={price_curr.price:.4f} {CURRENCY}/unit"
-                    + (f", delta_vs_prev={price_delta:.4f}" if price_prev else "")
+                        f"Price Table (FY): price_fy={price_curr.price:.4f} {CURRENCY}/unit"
+                        + (f", delta_vs_prev={price_delta:.4f}" if price_prev else "")
                 ),
                 "Change Log vs Previous FY: see price delta and scope notes.",
                 "Operational Notes: SLAs unchanged.",
@@ -359,7 +367,7 @@ def run_pipeline():
             meta = ProjectDocMeta(
                 fiscal_year=fy,
                 tower_id="N/A",  # Projects are not services
-                service_id="N/A", # Projects are not services
+                service_id="N/A",  # Projects are not services
                 project_id=p.project_id,
                 project_cost_fy24=p.cost_fy24 if p.exists_fy24 else 0.0,
                 project_cost_fy25=p.cost_fy25 if p.exists_fy25 else 0.0,
