@@ -381,7 +381,7 @@ def run_pipeline():
             emb.add_service_chunks(pdf_name=pdf_path.name, meta=meta, chunks=chunks)
 
             # PDF löschen, wenn du Speicher sparen willst
-            #pdf_path.unlink(missing_ok=True)
+            pdf_path.unlink(missing_ok=True)
 
     for p in projects:
         for fy in FISCAL_YEARS:
@@ -407,7 +407,7 @@ def run_pipeline():
                 "Dependencies & Risks: none material.",
             ]
             emb.add_project_chunks(pdf_name=pdf_path.name, meta=meta, chunks=chunks)
-            #pdf_path.unlink(missing_ok=True)
+            pdf_path.unlink(missing_ok=True)
 
     rprint("[bold green]Pipeline complete.[/bold green]")
 
