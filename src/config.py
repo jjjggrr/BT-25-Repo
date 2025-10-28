@@ -151,6 +151,22 @@ COUNTRY_NAMES_EN = {
     "AR": "Argentina",
 }
 
+COUNTRY_REGIONS = {
+    "DE": "EMEA",
+    "FR": "EMEA",
+    "IT": "EMEA",
+    "ES": "EMEA",
+    "NL": "EMEA",
+    "PL": "EMEA",
+    "US": "AMERICAS",
+    "CA": "AMERICAS",
+    "MX": "AMERICAS",
+    "BR": "AMERICAS",
+    "AR": "AMERICAS",
+    "CN": "APAC"
+}
+
+
 # === BU → Country Verfügbarkeit (C2: realistisch, deterministisch)
 BU_COUNTRY_MATRIX: Dict[str, List[str]] = {
     "ORG_001": ["DE","FR","IT","ES","NL","PL","US","CA","MX","BR"],  # Corporate

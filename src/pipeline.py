@@ -144,21 +144,23 @@ def write_csv_excel_friendly(df: pd.DataFrame, path: Path):
 
 
 def _build_dim_country() -> pd.DataFrame:
+    from .config import COUNTRY_REGIONS
     countries = [
-        {"country_code": "DE", "country_name": "GERMANY"},
-        {"country_code": "FR", "country_name": "FRANCE"},
-        {"country_code": "IT", "country_name": "ITALY"},
-        {"country_code": "ES", "country_name": "SPAIN"},
-        {"country_code": "NL", "country_name": "NETHERLANDS"},
-        {"country_code": "PL", "country_name": "POLAND"},
-        {"country_code": "US", "country_name": "UNITED STATES"},
-        {"country_code": "CA", "country_name": "CANADA"},
-        {"country_code": "MX", "country_name": "MEXICO"},
-        {"country_code": "BR", "country_name": "BRAZIL"},
-        {"country_code": "AR", "country_name": "ARGENTINA"},
-        {"country_code": "CN", "country_name": "CHINA"},
+        {"country_code": "DE", "country_name": "GERMANY", "region": COUNTRY_REGIONS["DE"]},
+        {"country_code": "FR", "country_name": "FRANCE", "region": COUNTRY_REGIONS["FR"]},
+        {"country_code": "IT", "country_name": "ITALY", "region": COUNTRY_REGIONS["IT"]},
+        {"country_code": "ES", "country_name": "SPAIN", "region": COUNTRY_REGIONS["ES"]},
+        {"country_code": "NL", "country_name": "NETHERLANDS", "region": COUNTRY_REGIONS["NL"]},
+        {"country_code": "PL", "country_name": "POLAND", "region": COUNTRY_REGIONS["PL"]},
+        {"country_code": "US", "country_name": "UNITED STATES", "region": COUNTRY_REGIONS["US"]},
+        {"country_code": "CA", "country_name": "CANADA", "region": COUNTRY_REGIONS["CA"]},
+        {"country_code": "MX", "country_name": "MEXICO", "region": COUNTRY_REGIONS["MX"]},
+        {"country_code": "BR", "country_name": "BRAZIL", "region": COUNTRY_REGIONS["BR"]},
+        {"country_code": "AR", "country_name": "ARGENTINA", "region": COUNTRY_REGIONS["AR"]},
+        {"country_code": "CN", "country_name": "CHINA", "region": COUNTRY_REGIONS["CN"]},
     ]
-    return pd.DataFrame(countries, columns=["country_code", "country_name"])
+    return pd.DataFrame(countries, columns=["country_code", "country_name", "region"])
+
 
 
 def _final_fact_df(run_rows: List[FactRunRow], change_rows: List[FactChangeRow]) -> pd.DataFrame:
