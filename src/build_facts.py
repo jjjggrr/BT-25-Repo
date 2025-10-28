@@ -1,11 +1,10 @@
 from __future__ import annotations
-from typing import List, Dict, Tuple
-from collections import defaultdict
+from typing import List, Dict
 from .models import FactRunRow, FactChangeRow, ServicePrice, ProjectDef
 from .config import FISCAL_YEARS, FISCAL_MONTHS, PROJECT_MONTHLY_DISTRIBUTION
 
 
-def _price_lookup(prices: List[ServicePrice]) -> Dict[Tuple[str, str], ServicePrice]:
+def _price_lookup(prices: List[ServicePrice]):
     return {(p.service_id, p.fiscal_year): p for p in prices}
 
 
@@ -16,16 +15,20 @@ def build_run_facts(quantities: List[Dict], prices: List[ServicePrice]) -> List[
         key = (q["service_id"], q["fiscal_year"])
         if key not in pmap:
             raise KeyError(f"Missing price for {key}")
-        price = pmap[key].price
-        run_cost = round(price * float(q["quantity"]), 4)
+        price = float(pmap[key].price)
+        qty = float(q["quantity"])
+        run_cost = round(price * qty, 4)
         rows.append(FactRunRow(
             fiscal_year=q["fiscal_year"],
             fiscal_month_num=int(q["fiscal_month_num"]),
             tower_id=q["tower_id"],
             service_id=q["service_id"],
             org_id=q["org_id"],
-            price=float(price),
-            quantity=float(q["quantity"]),
+            country_code=q["country_code"],
+            app_id=q["app_id"],
+            cost_center_id=q["cost_center_id"],
+            price=price,
+            quantity=qty,
             runCost=run_cost,
         ))
     return rows
@@ -53,17 +56,15 @@ def build_change_facts(projects: List[ProjectDef]) -> List[FactChangeRow]:
             if not exists:
                 continue
             total = p.cost_fy24 if fy == "FY24" else p.cost_fy25
-            # Distribute to BUs (stable allocation)
             for alloc in p.allocation:
                 bu_amount = total * alloc.share
-                # Spread over months
                 for m, w in enumerate(weights, start=1):
                     amt = round(bu_amount * w, 4)
                     rows.append(FactChangeRow(
                         fiscal_year=fy,
                         fiscal_month_num=m,
                         project_id=p.project_id,
-                        tower_id="",  # optional: map project->tower/service if desired
+                        tower_id="",
                         service_id=None,
                         org_id=alloc.org_id,
                         project_cost=amt,

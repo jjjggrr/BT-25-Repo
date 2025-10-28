@@ -33,13 +33,17 @@ class ProjectDef(BaseModel):
 
 class FactRunRow(BaseModel):
     fiscal_year: str
-    fiscal_month_num: int  # 1..12, FY starts Oct
+    fiscal_month_num: int
     tower_id: str
     service_id: str
     org_id: str
+    country_code: str         # NEU
+    app_id: str
+    cost_center_id: str
     price: float
     quantity: float
     runCost: float
+
 
 class FactChangeRow(BaseModel):
     fiscal_year: str

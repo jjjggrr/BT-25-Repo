@@ -1,10 +1,11 @@
-reportlab==4.2.2
-numpy==2.1.1
-pandas==2.2.3
-pydantic==2.9.2
-python-dateutil==2.9.0
-rich==13.9.2
+reportlab==4.4.4
+numpy==2.3.4
+pandas==2.3.2
+pydantic==2.11.1
+python-dateutil==2.9.0.post0
+rich==14.1.0
 # Embedding + Vector DB (local, simple)
-sentence-transformers==3.2.1
-torch==2.4.1
-chromadb==0.5.5
+sentence-transformers==5.1.0
+torch==2.9.0
+chromadb==1.2.2
+duckdb~=1.4.1

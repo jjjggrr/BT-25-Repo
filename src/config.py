@@ -2,6 +2,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Dict
+import random
 
 # === Paths (Windows-friendly) ===
 ROOT = Path(__file__).resolve().parents[1]
@@ -38,23 +39,41 @@ SERVICES = [
     {"service_id": "SRV-HOS", "tower_id": "TWR-02", "service_name": "Hosting", "unit": "vm/month"},
 ]
 
+# Define 15 business units
 BUSINESS_UNITS = [
-    {"org_id": "BU-EMEA", "business_unit": "EMEA"},
-    {"org_id": "BU-AMER", "business_unit": "Americas"},
+    {"org_id": f"BU_{i:02d}", "business_unit_name": f"Business Unit {i:02d}"}
+    for i in range(1, 11)
 ]
+
+# Countries per BU
+COUNTRIES = [
+    "DE", "FR", "IT", "ES", "NL", "PL", "US", "CA", "MX", "BR"
+]
+
+# Expanded BU-country combinations
+BU_COUNTRIES = []
+for bu in BUSINESS_UNITS:
+    # jede BU in 3–10 Ländern aktiv
+    active = random.sample(COUNTRIES, k=random.randint(3, 10))
+    for c in active:
+        BU_COUNTRIES.append({
+            "org_id": bu["org_id"],
+            "country_code": c,
+            "business_unit_name": bu["business_unit_name"],
+        })
 
 # Projects – some exist across FYs, some are new in FY25
 PROJECTS = [
-    {"project_id": "PRJ-A", "project_name": "Modernize Endpoint", "exists_fy24": True,  "exists_fy25": True},
-    {"project_id": "PRJ-B", "project_name": "Data Center Refresh", "exists_fy24": True,  "exists_fy25": True},
+    {"project_id": "PRJ-A", "project_name": "Modernize Endpoint", "exists_fy24": True, "exists_fy25": True},
+    {"project_id": "PRJ-B", "project_name": "Data Center Refresh", "exists_fy24": True, "exists_fy25": True},
     {"project_id": "PRJ-C", "project_name": "New Collaboration Suite", "exists_fy24": False, "exists_fy25": True},
 ]
 
 # Default price deltas YOY (per service) for FY25 vs FY24 (can be pos/neg)
 DEFAULT_PRICE_DELTAS = {
-    "SRV-DEV": -0.03,   # -3% productivity
-    "SRV-CLB":  0.00,   # flat
-    "SRV-HOS":  0.02,   # +2%
+    "SRV-DEV": -0.03,  # -3% productivity
+    "SRV-CLB": 0.00,  # flat
+    "SRV-HOS": 0.02,  # +2%
 }
 
 # RUN quantity scale per BU to shape relative sizes
@@ -70,8 +89,22 @@ RUN_MONTHLY_NOISE = 0.05
 PROJECT_BUDGETS = {
     "PRJ-A": {"FY24": 800_000.0, "FY25": 650_000.0},
     "PRJ-B": {"FY24": 500_000.0, "FY25": 700_000.0},
-    "PRJ-C": {"FY24": 0.0,       "FY25": 450_000.0},
+    "PRJ-C": {"FY24": 0.0, "FY25": 450_000.0},
 }
+
+# === SCALE-UP PARAMETERS ===
+NUM_COST_CENTERS = 50
+NUM_APPS = 20
+
+DIM_COST_CENTERS = [
+    {"cost_center_id": f"CC-{i:04d}", "cost_center_name": f"Cost Center {i:04d}"}
+    for i in range(1, NUM_COST_CENTERS + 1)
+]
+
+DIM_APPS = [
+    {"app_id": f"APP-{i:04d}", "app_name": f"Application {i:04d}"}
+    for i in range(1, NUM_APPS + 1)
+]
 
 # Allocation policy across BUs (stable across FYs for projects that exist across years)
 # If not provided for a project, generator will draw a stable random vector.
