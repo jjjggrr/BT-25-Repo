@@ -35,6 +35,8 @@ from .validate import (
 def _base_dir() -> Path:
     if platform.system() == "Windows":
         return Path("C:/Users/jakob/tbm_demo")
+    if platform.system() == "Linux":
+        return Path("/home/jakob/tbm_demo")
     else:
         return Path("/Users/jakob/tbm_demo")
 
