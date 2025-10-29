@@ -241,6 +241,7 @@ DIM_APPS: List[Dict[str, str]] = [
     {"app_id": "APP-0017", "app_name": "Cisco Network Management Suite", "vendor": "Cisco"},
     {"app_id": "APP-0018", "app_name": "Palo Alto Security Platform", "vendor": "Palo Alto"},
     {"app_id": "APP-0019", "app_name": "Snowflake Data Cloud", "vendor": "Snowflake"},
+
     {"app_id": "APP-0020", "app_name": "Tableau Analytics Platform", "vendor": "Tableau"},
     {"app_id": "APP-0021", "app_name": "Enterprise Data Lake", "vendor": "Internal"},
     {"app_id": "APP-0022", "app_name": "IAM Core Platform", "vendor": "Internal"},
