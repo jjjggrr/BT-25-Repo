@@ -2,7 +2,7 @@ from __future__ import annotations
 from typing import List, Dict, Tuple
 from collections import defaultdict
 from rich import print as rprint
-from .models import FactRunRow, FactChangeRow, ServicePrice, ProjectDef
+from .models import FactRunRow, FactChangeRow, ProjectDef
 
 
 class ValidationError(Exception):
