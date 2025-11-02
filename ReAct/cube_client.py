@@ -76,21 +76,22 @@ class CubeClient:
         return df
 
     # ---------------- Public helpers ----------------
-    def total_cost_by_service_fy(self, org: str, service: str) -> pd.DataFrame:
-        """Query actual cost by org/service/fiscal year from FctItCosts."""
+    def total_cost_by_service_fy(self, org: str, service: str,
+                                 service_dim: str = "DimService.serviceName") -> pd.DataFrame:
+        """Query actual cost by org/service/app/fiscal year from FctItCosts."""
         if self.use_cube:
-            print("[CubeClient] Querying FctItCosts.actualCost for", org, service)
+            print(f"[CubeClient] Querying FctItCosts.actualCost for {org} {service} ({service_dim})")
             payload = {
                 "query": {
                     "measures": ["FctItCosts.actualCost"],
                     "dimensions": [
                         "DimOrg.businessUnit",
-                        "DimService.serviceName",
+                        service_dim,
                         "FctItCosts.fiscalYear"
                     ],
                     "filters": [
                         {"dimension": "DimOrg.businessUnit", "operator": "equals", "values": [org]},
-                        {"dimension": "DimService.serviceName", "operator": "equals", "values": [service]}
+                        {"dimension": service_dim, "operator": "equals", "values": [service]}
                     ],
                     "limit": 500
                 }

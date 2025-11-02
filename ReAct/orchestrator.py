@@ -85,15 +85,17 @@ def parse_question(q: str, valid_values: dict | None = None) -> Dict[str, Any]:
     ngrams += [" ".join(p) for p in zip(tokens, tokens[1:], tokens[2:])]  # trigrams
     ngrams = [t.lower() for t in ngrams]
 
+    # Define stopwords
+    STOPWORDS = {"what", "the", "and", "for", "cost", "why", "high", "top", "unit", "are", "in", "of", "to", "by"}
+
     if valid_values:
         for dim, vals in valid_values.items():
             if not vals:
                 continue
             low_vals = [v.lower() for v in vals]
-            for tok_l in ngrams:  # iterate over ngrams, not tokens
-                if len(tok_l) < 4:
-                    continue
-                if tok_l in {"what", "the", "and", "for", "cost", "why", "high", "top", "unit", "are"}:
+
+            for tok_l in ngrams:
+                if len(tok_l) < 4 or tok_l in STOPWORDS:
                     continue
 
                 match = None
@@ -112,9 +114,13 @@ def parse_question(q: str, valid_values: dict | None = None) -> Dict[str, Any]:
                 if match:
                     idx = low_vals.index(match)
                     v = vals[idx]
+
                     if dim.startswith("DimOrg."):
                         detected["org"]["value"], detected["org"]["dim"] = v, dim
                     elif dim.startswith("DimService."):
+                        detected["service"]["value"], detected["service"]["dim"] = v, dim
+                    elif dim.startswith("DimApp."):
+                        # treat applications as service-equivalent
                         detected["service"]["value"], detected["service"]["dim"] = v, dim
                     elif dim.startswith("DimCountry."):
                         detected["country"]["value"], detected["country"]["dim"] = v, dim
