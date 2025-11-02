@@ -146,6 +146,42 @@ def parse_question(q: str, valid_values: dict | None = None) -> Dict[str, Any]:
         "intent": {"top_n": top_n, "ask_drivers": ask_drivers},
     }
 
+def split_into_subqueries(q: str, parsed: dict) -> List[Dict[str, Any]]:
+    """
+    Heuristically split a complex question into sub-queries.
+    Returns structured tasks the orchestrator can execute separately.
+    """
+    subs = []
+    q_lower = q.lower()
+
+    # 1) top cost drivers
+    if "driver" in q_lower or "cost driver" in q_lower:
+        subs.append({
+            "type": "drivers",
+            "org": parsed.get("org"),
+            "fy_old": parsed.get("fy_old"),
+            "fy_new": parsed.get("fy_new")
+        })
+
+    # 2) why is <service/app> high?
+    if "why" in q_lower or "reason" in q_lower:
+        if parsed.get("service"):
+            subs.append({
+                "type": "why_service",
+                "org": parsed.get("org"),
+                "service": parsed.get("service"),
+                "service_dim": parsed.get("service_dimension")
+            })
+
+    # 3) total costs for a country
+    if "country" in parsed and parsed.get("country"):
+        subs.append({
+            "type": "totals",
+            "country": parsed.get("country"),
+            "country_dim": parsed.get("country_dimension")
+        })
+
+    return subs
 
 
 # ---------------------------------------------------------------------------
@@ -173,26 +209,75 @@ def build_retrieval_queries(parsed: Dict[str, Any]) -> List[str]:
 
 def orchestrate(question: str) -> Tuple[Dict[str, Any], str]:
     parsed = parse_question(question, VALID_VALUES)
+    subqueries = split_into_subqueries(question, parsed)
+
     cube = CubeClient()
     chroma = ChromaClient()
+    results = []
 
-    # --- Extract parameters ---
-    org = parsed["org"]
-    org_dim = parsed["org_dimension"] or "DimOrg.businessUnit"
-    fy_old = parsed["fy_old"] or "FY24"
-    fy_new = parsed["fy_new"] or "FY25"
-    service = parsed["service"]
-    service_dim = parsed["service_dimension"] or "DimService.serviceName"
-    top_n = parsed["intent"]["top_n"]
+    # --- Multi-query mode ---
+    if subqueries:
+        print(f"[Orchestrator] Detected {len(subqueries)} subqueries: {[s.get('type') for s in subqueries]}")
+        results = []
+        for sub in subqueries:
+            t = str(sub.get("type", "")).strip().lower()
 
-    print(f"[Orchestrator] Parsed: org={org} ({org_dim}), service={service}, FYs={fy_old}->{fy_new}")
+            # --- Top cost drivers ---
+            if t == "drivers":
+                print(
+                    f"[Orchestrator] Executing driver query for {sub.get('org')} FY {sub.get('fy_old')} → {sub.get('fy_new')}")
+                df = cube.top_cost_drivers(sub.get("org"), sub.get("fy_old"), sub.get("fy_new"), top_n=5)
+                results.append({"type": t, "data": df.to_dict(orient="records")})
+                continue
 
-    # --- Numeric retrievals ---
-    df_service = cube.total_cost_by_service_fy(org, service)
-    df_drivers = cube.top_cost_drivers(org, fy_old, fy_new, top_n=top_n)
-    df_delta = cube.cost_delta_summary(org, fy_old, fy_new)
+            # --- Why service costs high ---
+            if t == "why_service":
+                print(f"[Orchestrator] Executing why_service query for {sub.get('service')} ({sub.get('service_dim')})")
+                df = cube.total_cost_by_service_fy(
+                    sub.get("org"),
+                    sub.get("service"),
+                    sub.get("service_dim")
+                )
+                text = chroma.query(
+                    [f"{sub.get('service')} {sub.get('org')} cost changes FY25 FY24"], k=5
+                )
+                results.append({
+                    "type": t,
+                    "numeric": df.to_dict(orient="records"),
+                    "textual": text
+                })
+                continue
 
-    # --- Textual retrievals ---
+            # --- Country totals ---
+            if t == "totals":
+                print(f"[Orchestrator] Executing totals query for {sub.get('country')} ({sub.get('country_dim')})")
+                df = cube.total_cost_by_country(
+                    sub.get("country"),
+                    sub.get("country_dim")
+                )
+                results.append({"type": t, "data": df.to_dict(orient="records")})
+                continue
+
+        # --- Persist ---
+        result = {
+            "question": question,
+            "parsed": parsed,
+            "subquery_results": results,
+            "executed_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        }
+        os.makedirs(RESULTS_DIR, exist_ok=True)
+        out_path = os.path.join(RESULTS_DIR, f"result_{int(time.time())}.json")
+        with open(out_path, "w", encoding="utf-8") as f:
+            json.dump(result, f, indent=2)
+        print(f"[Orchestrator] Multi-query result written to {out_path}")
+        return result, out_path
+
+    # --- Single-query fallback ---
+    print("[Orchestrator] No explicit subqueries detected, running standard pipeline.")
+    df_service = cube.total_cost_by_service_fy(parsed["org"], parsed["service"], parsed["service_dimension"])
+    df_drivers = cube.top_cost_drivers(parsed["org"], parsed["fy_old"], parsed["fy_new"],
+                                       top_n=parsed["intent"]["top_n"])
+    df_delta = cube.cost_delta_summary(parsed["org"], parsed["fy_old"], parsed["fy_new"])
     queries = build_retrieval_queries(parsed)
     docs = chroma.query(queries, k=5)
 
@@ -215,12 +300,10 @@ def orchestrate(question: str) -> Tuple[Dict[str, Any], str]:
         },
     }
 
-    # --- Persist ---
     os.makedirs(RESULTS_DIR, exist_ok=True)
     out_path = os.path.join(RESULTS_DIR, f"result_{int(time.time())}.json")
     with open(out_path, "w", encoding="utf-8") as f:
         json.dump(result, f, indent=2)
-
     print(f"[Orchestrator] Result written to {out_path}")
     return result, out_path
 

@@ -75,6 +75,24 @@ class CubeClient:
         }
         return df
 
+    def total_cost_by_country(self, country: str, country_dim: str = "DimCountry.countryName") -> pd.DataFrame:
+        if self.use_cube:
+            print(f"[CubeClient] Querying total cost for {country} ({country_dim})")
+            payload = {
+                "query": {
+                    "measures": ["FctItCosts.actualCost"],
+                    "dimensions": [country_dim],
+                    "filters": [
+                        {"dimension": country_dim, "operator": "equals", "values": [country]}
+                    ],
+                    "limit": 500
+                }
+            }
+            resp = requests.post(f"{CUBEJS_API_URL.rstrip('/')}/load", json=payload, timeout=60)
+            resp.raise_for_status()
+            data = resp.json().get("data", [])
+            return pd.DataFrame(data)
+
     # ---------------- Public helpers ----------------
     def total_cost_by_service_fy(self, org: str, service: str,
                                  service_dim: str = "DimService.serviceName") -> pd.DataFrame:
