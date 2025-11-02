@@ -125,64 +125,58 @@ class CubeClient:
             return pd.DataFrame(data)
 
     def cost_delta_summary(self, org: str, fy_old: str, fy_new: str) -> pd.DataFrame:
-        """
-        Vergleicht die tatsächlichen IT-Kosten (actualCost) einer Business Unit zwischen zwei Fiscal Years.
-        Führt ausschließlich eine REST-Abfrage an Cube.js aus und berechnet das Delta in Python.
-        """
-        print(f"[CubeClient] Querying cost delta summary for {org}: {fy_old} → {fy_new}")
-
-        # Cube.js Query: hole die actualCost-Werte für beide Fiscal Years
-        payload = {
-            "query": {
-                "measures": ["FctItCosts.actualCost"],
-                "dimensions": [
-                    "DimOrg.businessUnit",
-                    "FctItCosts.fiscalYear"
-                ],
-                "filters": [
-                    {"dimension": "DimOrg.businessUnit", "operator": "equals", "values": [org]},
-                    {"dimension": "FctItCosts.fiscalYear", "operator": "in", "values": [fy_old, fy_new]}
-                ],
-                "limit": 500
+        """Compare actual costs for a business unit between two fiscal years using Cube.js."""
+        if self.use_cube:
+            print(f"[CubeClient] Querying cost delta summary for {org}: {fy_old} → {fy_new}")
+            payload = {
+                "query": {
+                    "measures": ["FctItCosts.actualCost"],
+                    "dimensions": ["DimOrg.businessUnit", "FctItCosts.fiscalYear"],
+                    "filters": [
+                        {"dimension": "DimOrg.businessUnit", "operator": "equals", "values": [org]},
+                        {"dimension": "FctItCosts.fiscalYear", "operator": "in", "values": [fy_old, fy_new]}
+                    ],
+                    "limit": 500
+                }
             }
-        }
+            resp = requests.post(f"{CUBEJS_API_URL.rstrip('/')}/load", json=payload, timeout=60)
+            resp.raise_for_status()
+            data = resp.json().get("data", [])
+            df = pd.DataFrame(data)
 
-        resp = requests.post(f"{CUBEJS_API_URL.rstrip('/')}/load", json=payload, timeout=60)
-        resp.raise_for_status()
-        data = resp.json().get("data", [])
-        df = pd.DataFrame(data)
+            if df.empty:
+                print(f"[CubeClient] Warning: No data returned for {org}, FY {fy_old}/{fy_new}")
+                return df
 
-        if df.empty:
-            print(f"[CubeClient] Warning: No data returned for {org}, FY {fy_old}/{fy_new}")
-            return df
+            try:
+                df_wide = df.pivot(index="DimOrg.businessUnit",
+                                   columns="FctItCosts.fiscalYear",
+                                   values="FctItCosts.actualCost").fillna(0)
 
-        # Pivotiere: Spalten = Fiscal Years, Zeilen = Org
-        try:
-            df_wide = df.pivot(index="DimOrg.businessUnit",
-                               columns="FctItCosts.fiscalYear",
-                               values="FctItCosts.actualCost").fillna(0)
-        except Exception as e:
-            print("[CubeClient] Pivot failed:", e)
-            return df
+                # Cast to numeric (Cube.js returns strings)
+                fy_old_val = float(df_wide.get(fy_old, pd.Series([0])).iloc[0])
+                fy_new_val = float(df_wide.get(fy_new, pd.Series([0])).iloc[0])
 
-        # Extrahiere Werte
-        fy_old_val = df_wide.get(fy_old, pd.Series([0])).iloc[0]
-        fy_new_val = df_wide.get(fy_new, pd.Series([0])).iloc[0]
-        delta_abs = fy_new_val - fy_old_val
-        delta_pct = (delta_abs / fy_old_val) if fy_old_val else None
+                delta_abs = fy_new_val - fy_old_val
+                delta_pct = (delta_abs / fy_old_val) if fy_old_val else None
 
-        df_delta = pd.DataFrame({
-            "org": [org],
-            "fy_old": [fy_old],
-            "fy_new": [fy_new],
-            "cost_old": [fy_old_val],
-            "cost_new": [fy_new_val],
-            "delta_abs": [delta_abs],
-            "delta_pct": [delta_pct]
-        })
+                df_delta = pd.DataFrame({
+                    "org": [org],
+                    "fy_old": [fy_old],
+                    "fy_new": [fy_new],
+                    "cost_old": [fy_old_val],
+                    "cost_new": [fy_new_val],
+                    "delta_abs": [delta_abs],
+                    "delta_pct": [delta_pct]
+                })
+                print(
+                    f"[CubeClient] FY{fy_old}: {fy_old_val:,.2f}, FY{fy_new}: {fy_new_val:,.2f}, Δ = {delta_abs:,.2f}")
+                return df_delta
 
-        print(f"[CubeClient] FY{fy_old}: {fy_old_val:,.2f}, FY{fy_new}: {fy_new_val:,.2f}, Δ = {delta_abs:,.2f}")
-        return df_delta
+            except Exception as e:
+                print("[CubeClient] Pivot or delta computation failed:", e)
+                return df
+
 
 
 

@@ -1,43 +1,55 @@
-import argparse
-import json
-import os
-import re
-import time
-from typing import Dict, Any, List, Tuple
+import argparse, json, re, os, time
+from typing import Dict, Any, List, Tuple, Optional
+from difflib import get_close_matches
 
 from cube_client import CubeClient
 from chroma_client import ChromaClient
 from config import RESULTS_DIR
 from cube_meta import load_schema_cache
-from difflib import get_close_matches
+
+
+# ---------------------------------------------------------------------------
+#  GLOBALS
+# ---------------------------------------------------------------------------
 
 SCHEMA_CACHE = load_schema_cache(force_refresh=False)
 VALID_VALUES = SCHEMA_CACHE.get("valid_values", {})
 
-def normalize_value(value, dimension_name):
-    """Return closest valid value for a given dimension"""
-    vals = VALID_VALUES.get(dimension_name, [])
-    if not vals:
+
+# ---------------------------------------------------------------------------
+#  HELPERS
+# ---------------------------------------------------------------------------
+
+def normalize_value(value: str, dim_name: str, valid_values: dict) -> str:
+    """Fuzzy-match a value to the closest known valid value for the dimension."""
+    if not value or dim_name not in valid_values:
         return value
-    match = get_close_matches(value, vals, n=1, cutoff=0.7)
-    return match[0] if match else value
+    vals = valid_values[dim_name]
+    match = get_close_matches(value.lower(), [v.lower() for v in vals], n=1, cutoff=0.7)
+    if not match:
+        return value
+    # get exact casing from schema values
+    idx = [v.lower() for v in vals].index(match[0])
+    return vals[idx]
 
 
-ORG_RE = re.compile(r"(ORG[_-]?\d{1,4})", re.IGNORECASE)
-FY_RE  = re.compile(r"FY(\d{2})")
-SERVICE_GUESSES = ["Microsoft 365","M365","IaaS Compute","Storage","CRM","SAP"]
+# ---------------------------------------------------------------------------
+#  PARSER
+# ---------------------------------------------------------------------------
 
 def parse_question(q: str, valid_values: dict | None = None) -> Dict[str, Any]:
     """
-    Parses a natural-language query and tries to identify:
-      - organization (orgId or businessUnit)
-      - fiscal years (FY)
-      - service name
-      - intent flags (top_n, ask_drivers)
+    Parses a natural-language query and identifies:
+      - Organization (orgId or businessUnit)
+      - Service (DimService.serviceName)
+      - Country (DimCountry.countryName)
+      - Project (DimProject.projectName)
+      - Fiscal years (FY)
+      - Intent flags
     Uses fuzzy matching against schema_cache valid values.
     """
-    import re
     from difflib import get_close_matches
+    import re
 
     q_norm = q.strip().lower()
 
@@ -49,61 +61,92 @@ def parse_question(q: str, valid_values: dict | None = None) -> Dict[str, Any]:
     elif len(fys) == 1:
         fy_new = f"FY{fys[0]}"
 
-    # ---------------- Service extraction ----------------
-    SERVICE_GUESSES = ["Microsoft 365", "M365", "SAP", "CRM", "Storage", "IaaS Compute"]
-    service = None
-    for guess in SERVICE_GUESSES:
-        if guess.lower() in q_norm:
-            service = "Microsoft 365" if guess.lower() in ["m365", "microsoft 365"] else guess
-            break
-    matched_service_dim = "DimService.serviceName" if service else None
+    # ---------------- Tokenize query ----------------
+    tokens = re.findall(r"[a-zA-Z0-9_+]+", q_norm)
+    tokens += [" ".join(pair) for pair in zip(tokens, tokens[1:])]  # bigrams
 
-    # ---------------- Org extraction (ID or BU) ----------------
-    org = None
-    matched_org_dim = None
-    ORG_PATTERN = re.compile(r"(org[_-]?\d{1,4})", re.IGNORECASE)
+    detected: Dict[str, Dict[str, Optional[Any]]] = {
+        "org": {"value": None, "dim": None},
+        "service": {"value": None, "dim": None},
+        "country": {"value": None, "dim": None},
+        "project": {"value": None, "dim": None},
+    }
 
-    # Direct pattern match (ORG_001 etc.)
-    m = ORG_PATTERN.search(q_norm)
+    # ---------------- Exact pattern for ORG_xxx ----------------
+    m = re.search(r"(org[_-]?\d{1,4})", q_norm, re.IGNORECASE)
     if m:
-        org = m.group(1).upper()
-        matched_org_dim = "DimOrg.orgId"
+        detected["org"]["value"] = m.group(1).upper()
+        detected["org"]["dim"] = "DimOrg.orgId"
 
-    # Fuzzy match against valid values (if cache present)
-    if valid_values and not org:
-        org_dims = [d for d in valid_values.keys() if d.startswith("DimOrg.")]
-        for dim in org_dims:
-            values = valid_values.get(dim, [])
-            match = get_close_matches(q_norm, [v.lower() for v in values], n=1, cutoff=0.6)
-            if match:
-                idx = [v.lower() for v in values].index(match[0])
-                org = values[idx]
-                matched_org_dim = dim
-                break
+    # ---------------- Fuzzy matching across dimensions ----------------
+    # Build candidate ngrams once (outside the dim loop)
+    tokens = re.findall(r"[a-zA-Z0-9_+]+", q_norm)
+    ngrams = tokens + [" ".join(p) for p in zip(tokens, tokens[1:])]  # bigrams
+    ngrams += [" ".join(p) for p in zip(tokens, tokens[1:], tokens[2:])]  # trigrams
+    ngrams = [t.lower() for t in ngrams]
 
-    # ---------------- Intent extraction ----------------
-    top_n = 5
+    if valid_values:
+        for dim, vals in valid_values.items():
+            if not vals:
+                continue
+            low_vals = [v.lower() for v in vals]
+            for tok_l in ngrams:  # iterate over ngrams, not tokens
+                if len(tok_l) < 4:
+                    continue
+                if tok_l in {"what", "the", "and", "for", "cost", "why", "high", "top", "unit", "are"}:
+                    continue
+
+                match = None
+                # direct substring match
+                for lv in low_vals:
+                    if tok_l in lv:
+                        match = lv
+                        break
+
+                # fuzzy match fallback
+                if not match:
+                    fuzzy = get_close_matches(tok_l, low_vals, n=1, cutoff=0.7)
+                    if fuzzy:
+                        match = fuzzy[0]
+
+                if match:
+                    idx = low_vals.index(match)
+                    v = vals[idx]
+                    if dim.startswith("DimOrg."):
+                        detected["org"]["value"], detected["org"]["dim"] = v, dim
+                    elif dim.startswith("DimService."):
+                        detected["service"]["value"], detected["service"]["dim"] = v, dim
+                    elif dim.startswith("DimCountry."):
+                        detected["country"]["value"], detected["country"]["dim"] = v, dim
+                    elif dim.startswith("DimProject."):
+                        detected["project"]["value"], detected["project"]["dim"] = v, dim
+
+    # ---------------- Intent ----------------
     m_top = re.search(r"top\s+(\d+)", q_norm)
-    if m_top:
-        try:
-            top_n = int(m_top.group(1))
-        except ValueError:
-            pass
-    ask_drivers = "driver" in q_norm or "why" in q_norm or "reason" in q_norm
+    top_n = int(m_top.group(1)) if m_top else 5
+    ask_drivers = any(w in q_norm for w in ["driver", "why", "reason", "cause"])
 
-    # ---------------- Build result ----------------
     return {
-        "org": org,
-        "org_dimension": matched_org_dim,
-        "service": service,
-        "service_dimension": matched_service_dim,
+        "org": detected["org"]["value"],
+        "org_dimension": detected["org"]["dim"],
+        "service": detected["service"]["value"],
+        "service_dimension": detected["service"]["dim"],
+        "country": detected["country"]["value"],
+        "country_dimension": detected["country"]["dim"],
+        "project": detected["project"]["value"],
+        "project_dimension": detected["project"]["dim"],
         "fy_old": fy_old,
         "fy_new": fy_new,
         "intent": {"top_n": top_n, "ask_drivers": ask_drivers},
     }
 
 
-def build_retrieval_queries(parsed:Dict[str,Any]) -> List[str]:
+
+# ---------------------------------------------------------------------------
+#  BUILD RETRIEVAL QUERIES
+# ---------------------------------------------------------------------------
+
+def build_retrieval_queries(parsed: Dict[str, Any]) -> List[str]:
     org = parsed.get("org") or ""
     service = parsed.get("service") or ""
     fy_old = parsed.get("fy_old") or "FY24"
@@ -117,51 +160,68 @@ def build_retrieval_queries(parsed:Dict[str,Any]) -> List[str]:
     ]
     return base
 
-def orchestrate(question:str) -> Tuple[Dict[str, Any], str]:
-        parsed = parse_question(question, VALID_VALUES)
-        cube = CubeClient()
-        chroma = ChromaClient()
 
-        # Defaults if not provided
-        org = parsed["org"] or "Org001"
-        fy_old = parsed["fy_old"] or "FY24"
-        fy_new = parsed["fy_new"] or "FY25"
-        service = parsed["service"] or "Microsoft 365"
-        top_n = parsed["intent"]["top_n"]
+# ---------------------------------------------------------------------------
+#  MAIN ORCHESTRATION LOGIC
+# ---------------------------------------------------------------------------
 
-        # Numeric retrievals
-        df_service = cube.total_cost_by_service_fy(org, service)
-        df_drivers = cube.top_cost_drivers(org, fy_old, fy_new, top_n=top_n)
-        df_delta = cube.cost_delta_summary(org, fy_old, fy_new)
+def orchestrate(question: str) -> Tuple[Dict[str, Any], str]:
+    parsed = parse_question(question, VALID_VALUES)
+    cube = CubeClient()
+    chroma = ChromaClient()
 
-        # Text retrievals
-        queries = build_retrieval_queries(parsed)
-        docs = chroma.query(queries, k=5)
+    # --- Extract parameters ---
+    org = parsed["org"]
+    org_dim = parsed["org_dimension"] or "DimOrg.businessUnit"
+    fy_old = parsed["fy_old"] or "FY24"
+    fy_new = parsed["fy_new"] or "FY25"
+    service = parsed["service"]
+    service_dim = parsed["service_dimension"] or "DimService.serviceName"
+    top_n = parsed["intent"]["top_n"]
 
-        result = {
-            "question": question,
-            "parsed": parsed,
-            "numeric": {
-                "service_costs_fy": df_service.to_dict(orient="records"),
-                "top_cost_drivers": df_drivers.to_dict(orient="records"),
-                "delta_summary": df_delta.to_dict(orient="records")
-            },
-            "textual": docs,
-            "provenance": {
-                "service_costs_fy": getattr(df_service, "attrs", {}).get("provenance", {}),
-                "top_cost_drivers": getattr(df_drivers, "attrs", {}).get("provenance", {}),
-                "delta_summary": getattr(df_delta, "attrs", {}).get("provenance", {}),
-                "queries": queries,
-                "executed_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
-            }
-        }
-        # Persist
-        os.makedirs(RESULTS_DIR, exist_ok=True)
-        out_path = os.path.join(RESULTS_DIR, f"result_{int(time.time())}.json")
-        with open(out_path, "w", encoding="utf-8") as f:
-            json.dump(result, f, indent=2)
+    print(f"[Orchestrator] Parsed: org={org} ({org_dim}), service={service}, FYs={fy_old}->{fy_new}")
 
-        return result, out_path
+    # --- Numeric retrievals ---
+    df_service = cube.total_cost_by_service_fy(org, service)
+    df_drivers = cube.top_cost_drivers(org, fy_old, fy_new, top_n=top_n)
+    df_delta = cube.cost_delta_summary(org, fy_old, fy_new)
+
+    # --- Textual retrievals ---
+    queries = build_retrieval_queries(parsed)
+    docs = chroma.query(queries, k=5)
+
+    # --- Combine results ---
+    result = {
+        "question": question,
+        "parsed": parsed,
+        "numeric": {
+            "service_costs_fy": df_service.to_dict(orient="records"),
+            "top_cost_drivers": df_drivers.to_dict(orient="records"),
+            "delta_summary": df_delta.to_dict(orient="records"),
+        },
+        "textual": docs,
+        "provenance": {
+            "service_costs_fy": getattr(df_service, "attrs", {}).get("provenance", {}),
+            "top_cost_drivers": getattr(df_drivers, "attrs", {}).get("provenance", {}),
+            "delta_summary": getattr(df_delta, "attrs", {}).get("provenance", {}),
+            "queries": queries,
+            "executed_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        },
+    }
+
+    # --- Persist ---
+    os.makedirs(RESULTS_DIR, exist_ok=True)
+    out_path = os.path.join(RESULTS_DIR, f"result_{int(time.time())}.json")
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(result, f, indent=2)
+
+    print(f"[Orchestrator] Result written to {out_path}")
+    return result, out_path
+
+
+# ---------------------------------------------------------------------------
+#  ENTRY POINT
+# ---------------------------------------------------------------------------
 
 def main():
     ap = argparse.ArgumentParser()
@@ -170,6 +230,7 @@ def main():
     res, path = orchestrate(args.query)
     print(json.dumps(res, indent=2))
     print(f"\nSaved: {path}")
+
 
 if __name__ == "__main__":
     main()
