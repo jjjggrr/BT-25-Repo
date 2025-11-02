@@ -1,63 +1,88 @@
-
 from typing import List, Dict, Any
 import os
-
+import torch
+from sentence_transformers import SentenceTransformer
+import chromadb
+from chromadb.utils import embedding_functions
 from config import CHROMA_HOST, CHROMA_COLLECTION
+
 
 class ChromaClient:
     """
-    Tries to connect to Chroma. If unavailable, returns deterministic mock results.
+    High-performance Chroma client for retrieval.
+    - Uses GPU if CUDA available, else CPU
+    - Uses same model as embedder (all-mpnet-base-v2)
+    - Raises error if Chroma cannot be reached (no mock fallback)
     """
+
     def __init__(self):
-        self.available = False
-        self.client = None
-        self.collection = None
+        # Detect GPU
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        print(f"[ChromaClient] Initializing with all-mpnet-base-v2 on device: {self.device}")
+
+        # Initialize embedding function (identical to embedder)
+        self.embedding_function = embedding_functions.SentenceTransformerEmbeddingFunction(
+            model_name="all-mpnet-base-v2",
+            device=self.device
+        )
+
+        # Connect to Chroma (local or HTTP)
         try:
-            import chromadb
             if CHROMA_HOST:
-                self.client = chromadb.HttpClient(host=CHROMA_HOST.replace("http://","").replace("https://",""))
+                # HTTP client (remote Chroma server)
+                print(f"[ChromaClient] Connecting to remote Chroma host: {CHROMA_HOST}")
+                self.client = chromadb.HttpClient(
+                    host=CHROMA_HOST.replace("http://", "").replace("https://", "")
+                )
             else:
+                # Local persistent Chroma instance
+                print("[ChromaClient] Connecting to local Chroma instance")
                 self.client = chromadb.Client()
-            self.collection = self.client.get_or_create_collection(CHROMA_COLLECTION)
-            self.available = True
-        except Exception:
-            self.available = False
 
-        # Optional keyword BM25 fallback (tiny scorer)
+            # Get or create collection
+            self.collection = self.client.get_or_create_collection(
+                name=CHROMA_COLLECTION,
+                embedding_function=self.embedding_function
+            )
+
+            # Test connection
+            _ = self.collection.count()
+            print(f"[ChromaClient] Connected successfully to collection '{CHROMA_COLLECTION}'")
+
+        except Exception as e:
+            raise ConnectionError(
+                f"[ChromaClient] Failed to connect to Chroma collection '{CHROMA_COLLECTION}': {e}"
+            ) from e
+
+    # ------------------ Query Interface ------------------
+
+    def query(self, query_texts: List[str], k: int = 5) -> List[Dict[str, Any]]:
+        """
+        Perform semantic retrieval for a list of text queries.
+        Returns a list of document chunks with metadata and scores.
+        """
+        if not query_texts:
+            raise ValueError("[ChromaClient] No query texts provided")
+
         try:
-            from rank_bm25 import BM25Okapi  # noqa
-            self.has_bm25 = True
-        except Exception:
-            self.has_bm25 = False
-
-        # load docs for bm25 mock if chroma not available
-        self._mock_docs = [
-            {"doc_id":"SLA_APP_042", "section":"Pricing & Financial Model", "page":2,
-             "text":"Unit price for compute increased by 7% in FY25 due to new vendor terms."},
-            {"doc_id":"PROJ_CRM_FY25", "section":"Contract Overview", "page":1,
-             "text":"CRM rollout phase 1 adds 1.2M compute minutes in FY25."},
-            {"doc_id":"OPS_M365", "section":"Operational & Governance Notes", "page":3,
-             "text":"Microsoft 365 seat growth in Org001 (+1%) impacted license tiers."}
-        ]
-
-    def query(self, query_texts: List[str], k:int=5) -> List[Dict[str,Any]]:
-        if self.available:
-            # Simplified: only first query, n_results=k
             res = self.collection.query(query_texts=query_texts, n_results=k)
-            docs = []
-            # Normalize to a stable list of dicts
-            for i, _q in enumerate(query_texts):
-                for j in range(len(res["documents"][i])):
-                    docs.append({
-                        "doc_id": res["ids"][i][j] if res.get("ids") else f"doc_{j}",
-                        "section": res["metadatas"][i][j].get("section") if res.get("metadatas") else "unknown",
-                        "page": res["metadatas"][i][j].get("page") if res.get("metadatas") else None,
-                        "text": res["documents"][i][j],
-                        "score": res["distances"][i][j] if res.get("distances") else None
-                    })
-            return docs[:k]
+        except Exception as e:
+            raise RuntimeError(f"[ChromaClient] Query failed: {e}") from e
 
-        # Fallback: crude keyword ranking over mock docs
-        merged_query = " ".join(query_texts).lower()
-        ranked = sorted(self._mock_docs, key=lambda d: -sum(int(w in d["text"].lower()) for w in merged_query.split()))
-        return ranked[:k]
+        if not res or "documents" not in res or not res["documents"]:
+            print("[ChromaClient] Warning: No matching documents found.")
+            return []
+
+        docs: List[Dict[str, Any]] = []
+        for i, _ in enumerate(query_texts):
+            docs_for_query = len(res["documents"][i])
+            for j in range(docs_for_query):
+                docs.append({
+                    "doc_id": res["ids"][i][j] if res.get("ids") else f"doc_{j}",
+                    "section": res["metadatas"][i][j].get("section") if res.get("metadatas") else None,
+                    "page": res["metadatas"][i][j].get("page") if res.get("metadatas") else None,
+                    "text": res["documents"][i][j],
+                    "score": res["distances"][i][j] if res.get("distances") else None
+                })
+        print(f"[ChromaClient] Retrieved {len(docs)} documents (top {k} per query)")
+        return docs

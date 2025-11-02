@@ -2,7 +2,7 @@
 import os
 
 # --- Cube.js / DuckDB ---
-CUBEJS_API_URL = os.environ.get("CUBEJS_API_URL", "").strip()  # e.g. http://localhost:4000/cubejs-api/v1/load
+CUBEJS_API_URL = "http://localhost:4000/cubejs-api/v1"
 DUCKDB_PATH     = os.environ.get("DUCKDB_PATH", "synthetic.duckdb")
 
 # --- Chroma ---

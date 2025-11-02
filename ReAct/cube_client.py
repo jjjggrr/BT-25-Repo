@@ -17,29 +17,35 @@ class CubeClient:
     """
     def __init__(self):
         self.use_cube = bool(CUBEJS_API_URL)
-        self.duckdb_path = DUCKDB_PATH
-        if not self.use_cube:
+        duckdb_path = r"C:\Users\jakob\tbm_demo\tbm_demo.duckdb"
+        self.duckdb_path = duckdb_path
+        if self.use_cube:
+            print(f"[CubeClient] Using Cube.js API at {CUBEJS_API_URL}")
+            self._connect = None  # disable local connect
+        else:
+            print("[CubeClient] No Cube.js API detected – fallback to local DuckDB.")
             self._ensure_duckdb()
 
     # ---------------- Cube.js path ----------------
-    def query_cubejs(self, measures: List[str], dimensions: List[str], filters: List[Dict[str,Any]],
-                     timeDimensions: Optional[List[Dict[str,Any]]] = None, limit: int = 5000) -> pd.DataFrame:
-        payload = {
+    def query_cubejs(self, measures, dimensions, filters,
+                     timeDimensions=None, limit=5000) -> pd.DataFrame:
+        query = {
             "measures": measures,
             "dimensions": dimensions,
             "filters": filters,
             "timeDimensions": timeDimensions or [],
             "limit": limit
         }
+        payload = {"query": query}  # <--- wichtig!
         t0 = time.time()
-        resp = requests.post(CUBEJS_API_URL.rstrip("/") + "/load", json=payload, timeout=60)
+        resp = requests.post(f"{CUBEJS_API_URL.rstrip('/')}/load", json=payload, timeout=60)
         resp.raise_for_status()
         data = resp.json().get("data", [])
         df = pd.DataFrame(data)
         df.attrs["provenance"] = {
-            "engine":"cubejs",
+            "engine": "cubejs",
             "payload": payload,
-            "elapsed_sec": round(time.time()-t0,3),
+            "elapsed_sec": round(time.time() - t0, 3),
             "query_hash": hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()[:16]
         }
         return df
@@ -70,69 +76,114 @@ class CubeClient:
         return df
 
     # ---------------- Public helpers ----------------
-    def total_cost_by_service_fy(self, org:str, service:str) -> pd.DataFrame:
+    def total_cost_by_service_fy(self, org: str, service: str) -> pd.DataFrame:
+        """Query actual cost by org/service/fiscal year from FctItCosts."""
         if self.use_cube:
-            return self.query_cubejs(
-                measures=["ItCosts.total_cost"],
-                dimensions=["Org.name","Service.name","FY.name"],
-                filters=[
-                    {"dimension":"Org.name","operator":"equals","values":[org]},
-                    {"dimension":"Service.name","operator":"equals","values":[service]}
+            print("[CubeClient] Querying FctItCosts.actualCost for", org, service)
+            payload = {
+                "query": {
+                    "measures": ["FctItCosts.actualCost"],
+                    "dimensions": [
+                        "DimOrg.businessUnit",
+                        "DimService.serviceName",
+                        "FctItCosts.fiscalYear"
+                    ],
+                    "filters": [
+                        {"dimension": "DimOrg.businessUnit", "operator": "equals", "values": [org]},
+                        {"dimension": "DimService.serviceName", "operator": "equals", "values": [service]}
+                    ],
+                    "limit": 500
+                }
+            }
+            resp = requests.post(f"{CUBEJS_API_URL.rstrip('/')}/load", json=payload, timeout=60)
+            resp.raise_for_status()
+            data = resp.json().get("data", [])
+            return pd.DataFrame(data)
+
+    def top_cost_drivers(self, org: str, fy_old: str, fy_new: str, top_n: int = 5) -> pd.DataFrame:
+        if self.use_cube:
+            print("[CubeClient] Querying top cost drivers for", org, fy_new)
+            payload = {
+                "query": {
+                    "measures": ["FctItCosts.actualCost"],
+                    "dimensions": [
+                        "DimService.serviceName",
+                        "FctItCosts.costType",
+                        "FctItCosts.fiscalYear"
+                    ],
+                    "filters": [
+                        {"dimension": "DimOrg.businessUnit", "operator": "equals", "values": [org]},
+                        {"dimension": "FctItCosts.fiscalYear", "operator": "in", "values": [fy_old, fy_new]}
+                    ],
+                    "order": [["FctItCosts.actualCost", "desc"]],
+                    "limit": top_n
+                }
+            }
+            resp = requests.post(f"{CUBEJS_API_URL.rstrip('/')}/load", json=payload, timeout=60)
+            resp.raise_for_status()
+            data = resp.json().get("data", [])
+            return pd.DataFrame(data)
+
+    def cost_delta_summary(self, org: str, fy_old: str, fy_new: str) -> pd.DataFrame:
+        """
+        Vergleicht die tatsächlichen IT-Kosten (actualCost) einer Business Unit zwischen zwei Fiscal Years.
+        Führt ausschließlich eine REST-Abfrage an Cube.js aus und berechnet das Delta in Python.
+        """
+        print(f"[CubeClient] Querying cost delta summary for {org}: {fy_old} → {fy_new}")
+
+        # Cube.js Query: hole die actualCost-Werte für beide Fiscal Years
+        payload = {
+            "query": {
+                "measures": ["FctItCosts.actualCost"],
+                "dimensions": [
+                    "DimOrg.businessUnit",
+                    "FctItCosts.fiscalYear"
                 ],
-                limit=500
-            )
-        sql = """
-        with agg as (
-            select org_bu as org, service, fy, sum(price*quantity) as cost
-            from fact_it_costs
-            where org_bu = ? and service = ?
-            group by 1,2,3
-        )
-        select * from agg order by fy;
-        """
-        return self.query_duckdb_sql(sql, (org, service))
+                "filters": [
+                    {"dimension": "DimOrg.businessUnit", "operator": "equals", "values": [org]},
+                    {"dimension": "FctItCosts.fiscalYear", "operator": "in", "values": [fy_old, fy_new]}
+                ],
+                "limit": 500
+            }
+        }
 
-    def top_cost_drivers(self, org:str, fy_old:str, fy_new:str, top_n:int=5) -> pd.DataFrame:
-        if self.use_cube:
-            # This should be implemented with your Cube schema; here we fallback to DuckDB decomposition.
-            pass
-        sql = """
-        with rows as (
-            select service, fy,
-                   sum(price) as p, sum(quantity) as q, sum(price*quantity) as c
-            from fact_it_costs
-            where org_bu = ? and fy in (?,?)
-            group by 1,2
-        ),
-        fy0 as (select service, p p0, q q0, c c0 from rows where fy=?),
-        fy1 as (select service, p p1, q q1, c c1 from rows where fy=?),
-        joined as (
-            select coalesce(fy1.service, fy0.service) service,
-                   coalesce(c1,0)-coalesce(c0,0) as delta,
-                   (coalesce(p1,p0)-coalesce(p0,0))*coalesce(q0,0) as price_effect,
-                   coalesce(p0,0)*(coalesce(q1,q0)-coalesce(q0,0)) as quantity_effect,
-                   (coalesce(p1,p0)-coalesce(p0,0))*(coalesce(q1,q0)-coalesce(q0,0)) as cross_effect,
-                   coalesce(c0,0) as c0, coalesce(c1,0) as c1
-            from fy0 full outer join fy1 using(service)
-        )
-        select service, c0 as cost_old, c1 as cost_new, delta, price_effect, quantity_effect, cross_effect
-        from joined
-        order by abs(delta) desc
-        limit ?;
-        """
-        return self.query_duckdb_sql(sql, (org, fy_old, fy_new, fy_old, fy_new, top_n))
+        resp = requests.post(f"{CUBEJS_API_URL.rstrip('/')}/load", json=payload, timeout=60)
+        resp.raise_for_status()
+        data = resp.json().get("data", [])
+        df = pd.DataFrame(data)
 
-    def cost_delta_summary(self, org:str, fy_old:str, fy_new:str) -> pd.DataFrame:
-        sql = """
-        with base as (
-          select fy, sum(price*quantity) as cost
-          from fact_it_costs
-          where org_bu = ? and fy in (?,?)
-          group by 1
-        )
-        select
-          (select cost from base where fy=?) as cost_old,
-          (select cost from base where fy=?) as cost_new,
-          (select cost from base where fy=?) - (select cost from base where fy=?) as delta_abs;
-        """
-        return self.query_duckdb_sql(sql, (org, fy_old, fy_new, fy_old, fy_new, fy_new, fy_old))
+        if df.empty:
+            print(f"[CubeClient] Warning: No data returned for {org}, FY {fy_old}/{fy_new}")
+            return df
+
+        # Pivotiere: Spalten = Fiscal Years, Zeilen = Org
+        try:
+            df_wide = df.pivot(index="DimOrg.businessUnit",
+                               columns="FctItCosts.fiscalYear",
+                               values="FctItCosts.actualCost").fillna(0)
+        except Exception as e:
+            print("[CubeClient] Pivot failed:", e)
+            return df
+
+        # Extrahiere Werte
+        fy_old_val = df_wide.get(fy_old, pd.Series([0])).iloc[0]
+        fy_new_val = df_wide.get(fy_new, pd.Series([0])).iloc[0]
+        delta_abs = fy_new_val - fy_old_val
+        delta_pct = (delta_abs / fy_old_val) if fy_old_val else None
+
+        df_delta = pd.DataFrame({
+            "org": [org],
+            "fy_old": [fy_old],
+            "fy_new": [fy_new],
+            "cost_old": [fy_old_val],
+            "cost_new": [fy_new_val],
+            "delta_abs": [delta_abs],
+            "delta_pct": [delta_pct]
+        })
+
+        print(f"[CubeClient] FY{fy_old}: {fy_old_val:,.2f}, FY{fy_new}: {fy_new_val:,.2f}, Δ = {delta_abs:,.2f}")
+        return df_delta
+
+
+
+
