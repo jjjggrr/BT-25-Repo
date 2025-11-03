@@ -62,17 +62,19 @@ def render_service_agreement_pdf(
     # === Meta Block ===
     story.append(Paragraph(f"Service Level Agreement – {app_name} ({app_id}) {fiscal_year}", styles["Title"]))
     story.append(Spacer(1, 0.4 * cm))
-    meta_text = (
-        f"Meta:\n"
-        f"ServiceID: {app_id}\n"
-        f"ServiceName: {service_name}\n"
-        f"Vendor: {vendor}\n"
-        f"FiscalYear: {fiscal_year}\n"
-        f"Currency: {CURRENCY}\n"
-        f"Tower: {service_name.split()[0] if service_name else 'N/A'}\n"
-        f"DocType: SLA\n"
-    )
-    story.append(Paragraph(f"<pre>{meta_text}</pre>", normal))
+    meta_lines = [
+        "Meta:",
+        f"ServiceID: {app_id}",
+        f"ServiceName: {service_name}",
+        f"Vendor: {vendor}",
+        f"FiscalYear: {fiscal_year}",
+        f"Currency: {CURRENCY}",
+        f"Tower: {service_name.split()[0] if service_name else 'N/A'}",
+        "DocType: SLA",
+    ]
+    for line in meta_lines:
+        story.append(Paragraph(line, normal))
+
     story.append(Spacer(1, 0.5 * cm))
 
     # === 1) Contract Overview ===
