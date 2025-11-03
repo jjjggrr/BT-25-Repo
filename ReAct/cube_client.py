@@ -96,12 +96,18 @@ class CubeClient:
     # ---------------- Public helpers ----------------
     def total_cost_by_service_fy(self, org: str, service: str,
                                  service_dim: str = "DimService.serviceName") -> pd.DataFrame:
-        """Query actual cost by org/service/app/fiscal year from FctItCosts."""
+        """
+        Query actual cost, price, and quantity by org/service/app/fiscal year.
+        """
         if self.use_cube:
-            print(f"[CubeClient] Querying FctItCosts.actualCost for {org} {service} ({service_dim})")
+            print(f"[CubeClient] Querying FctItCosts.actualCost + price + quantity for {org} {service} ({service_dim})")
             payload = {
                 "query": {
-                    "measures": ["FctItCosts.actualCost"],
+                    "measures": [
+                        "FctItCosts.actualCost",
+                        "FctItCosts.price",
+                        "FctItCosts.quantity"
+                    ],
                     "dimensions": [
                         "DimOrg.businessUnit",
                         service_dim,
@@ -111,90 +117,217 @@ class CubeClient:
                         {"dimension": "DimOrg.businessUnit", "operator": "equals", "values": [org]},
                         {"dimension": service_dim, "operator": "equals", "values": [service]}
                     ],
-                    "limit": 500
-                }
-            }
-            resp = requests.post(f"{CUBEJS_API_URL.rstrip('/')}/load", json=payload, timeout=60)
-            resp.raise_for_status()
-            data = resp.json().get("data", [])
-            return pd.DataFrame(data)
-
-    def top_cost_drivers(self, org: str, fy_old: str, fy_new: str, top_n: int = 5) -> pd.DataFrame:
-        if self.use_cube:
-            print("[CubeClient] Querying top cost drivers for", org, fy_new)
-            payload = {
-                "query": {
-                    "measures": ["FctItCosts.actualCost"],
-                    "dimensions": [
-                        "DimService.serviceName",
-                        "FctItCosts.costType",
-                        "FctItCosts.fiscalYear"
-                    ],
-                    "filters": [
-                        {"dimension": "DimOrg.businessUnit", "operator": "equals", "values": [org]},
-                        {"dimension": "FctItCosts.fiscalYear", "operator": "in", "values": [fy_old, fy_new]}
-                    ],
-                    "order": [["FctItCosts.actualCost", "desc"]],
-                    "limit": top_n
-                }
-            }
-            resp = requests.post(f"{CUBEJS_API_URL.rstrip('/')}/load", json=payload, timeout=60)
-            resp.raise_for_status()
-            data = resp.json().get("data", [])
-            return pd.DataFrame(data)
-
-    def cost_delta_summary(self, org: str, fy_old: str, fy_new: str) -> pd.DataFrame:
-        """Compare actual costs for a business unit between two fiscal years using Cube.js."""
-        if self.use_cube:
-            print(f"[CubeClient] Querying cost delta summary for {org}: {fy_old} → {fy_new}")
-            payload = {
-                "query": {
-                    "measures": ["FctItCosts.actualCost"],
-                    "dimensions": ["DimOrg.businessUnit", "FctItCosts.fiscalYear"],
-                    "filters": [
-                        {"dimension": "DimOrg.businessUnit", "operator": "equals", "values": [org]},
-                        {"dimension": "FctItCosts.fiscalYear", "operator": "in", "values": [fy_old, fy_new]}
-                    ],
-                    "limit": 500
+                    "limit": 500,
+                    "cacheMode": "stale-if-slow"
                 }
             }
             resp = requests.post(f"{CUBEJS_API_URL.rstrip('/')}/load", json=payload, timeout=60)
             resp.raise_for_status()
             data = resp.json().get("data", [])
             df = pd.DataFrame(data)
+            # normalize datatypes
+            for col in ["FctItCosts.actualCost", "FctItCosts.price", "FctItCosts.quantity"]:
+                if col in df.columns:
+                    df[col] = pd.to_numeric(df[col], errors="coerce")
+            return df
 
-            if df.empty:
-                print(f"[CubeClient] Warning: No data returned for {org}, FY {fy_old}/{fy_new}")
-                return df
+    def top_cost_drivers(self, org: str, fy_old: str, fy_new: str, top_n: int = 5) -> pd.DataFrame:
+        """
+        Retrieve Top-N cost drivers for a business unit, aggregated by service.
+        Phase 1: Get top-N services for FY_new.
+        Phase 2: Fetch the same services for FY_old.
+        Then combine, remove duplicates, and return the full FY24/FY25 dataset.
+        """
+        if not self.use_cube:
+            raise RuntimeError("Cube.js must be active")
 
-            try:
-                df_wide = df.pivot(index="DimOrg.businessUnit",
-                                   columns="FctItCosts.fiscalYear",
-                                   values="FctItCosts.actualCost").fillna(0)
+        base_url = CUBEJS_API_URL.rstrip('/')
 
-                # Cast to numeric (Cube.js returns strings)
-                fy_old_val = float(df_wide.get(fy_old, pd.Series([0])).iloc[0])
-                fy_new_val = float(df_wide.get(fy_new, pd.Series([0])).iloc[0])
+        # --- Phase 1: Top-N services for FY_new ---
+        print(f"[CubeClient] Top {top_n} cost drivers for {org} in {fy_new}")
+        payload_new = {
+            "query": {
+                "measures": ["FctItCosts.actualCost"],
+                "dimensions": ["DimService.serviceName", "FctItCosts.fiscalYear"],
+                "filters": [
+                    {"dimension": "DimOrg.businessUnit", "operator": "equals", "values": [org]},
+                    {"dimension": "FctItCosts.fiscalYear", "operator": "equals", "values": [fy_new]},
+                ],
+                "order": {"FctItCosts.actualCost": "desc"},
+                "limit": top_n,
+                "cacheMode": "stale-if-slow"
+            }
+        }
 
-                delta_abs = fy_new_val - fy_old_val
-                delta_pct = (delta_abs / fy_old_val) if fy_old_val else None
+        r_new = requests.post(f"{base_url}/load", json=payload_new, timeout=60)
+        r_new.raise_for_status()
+        df_new = pd.DataFrame(r_new.json().get("data", []))
 
-                df_delta = pd.DataFrame({
-                    "org": [org],
-                    "fy_old": [fy_old],
-                    "fy_new": [fy_new],
-                    "cost_old": [fy_old_val],
-                    "cost_new": [fy_new_val],
-                    "delta_abs": [delta_abs],
-                    "delta_pct": [delta_pct]
-                })
-                print(
-                    f"[CubeClient] FY{fy_old}: {fy_old_val:,.2f}, FY{fy_new}: {fy_new_val:,.2f}, Δ = {delta_abs:,.2f}")
-                return df_delta
+        if df_new.empty:
+            print(f"[CubeClient] Warning: No FY_new data for {org} in {fy_new}")
+            return df_new
 
-            except Exception as e:
-                print("[CubeClient] Pivot or delta computation failed:", e)
-                return df
+        # ensure numeric and distinct
+        df_new["FctItCosts.actualCost"] = pd.to_numeric(df_new["FctItCosts.actualCost"], errors="coerce")
+        top_services = df_new["DimService.serviceName"].unique().tolist()
+
+        # --- Phase 2: Fetch FY_old values for the same services ---
+        print(f"[CubeClient] Fetching FY {fy_old} values for Top {len(top_services)} services")
+        payload_old = {
+            "query": {
+                "measures": ["FctItCosts.actualCost"],
+                "dimensions": ["DimService.serviceName", "FctItCosts.fiscalYear"],
+                "filters": [
+                    {"dimension": "DimOrg.businessUnit", "operator": "equals", "values": [org]},
+                    {"dimension": "FctItCosts.fiscalYear", "operator": "equals", "values": [fy_old]},
+                    {"dimension": "DimService.serviceName", "operator": "in", "values": top_services}
+                ],
+                "cacheMode": "stale-if-slow"
+            }
+        }
+
+        r_old = requests.post(f"{base_url}/load", json=payload_old, timeout=60)
+        r_old.raise_for_status()
+        df_old = pd.DataFrame(r_old.json().get("data", []))
+
+        if not df_old.empty:
+            df_old["FctItCosts.actualCost"] = pd.to_numeric(df_old["FctItCosts.actualCost"], errors="coerce")
+
+        # --- Combine and deduplicate ---
+        df_combined = pd.concat([df_new, df_old], ignore_index=True)
+        df_combined = df_combined.drop_duplicates(
+            subset=["DimService.serviceName", "FctItCosts.fiscalYear"], keep="first"
+        ).reset_index(drop=True)
+
+        # --- Aggregate by service + FY (just in case of multiple cost types) ---
+        df_combined = (
+            df_combined.groupby(["DimService.serviceName", "FctItCosts.fiscalYear"])["FctItCosts.actualCost"]
+            .sum()
+            .reset_index()
+        )
+
+        # --- Total BU costs (for normalization) ---
+        print(f"[CubeClient] Fetching total cost for {org} ({fy_old} & {fy_new})")
+        payload_total = {
+            "query": {
+                "measures": ["FctItCosts.actualCost"],
+                "dimensions": ["DimOrg.businessUnit", "FctItCosts.fiscalYear"],
+                "filters": [
+                    {"dimension": "DimOrg.businessUnit", "operator": "equals", "values": [org]},
+                    {"dimension": "FctItCosts.fiscalYear", "operator": "in", "values": [fy_old, fy_new]}
+                ],
+                "cacheMode": "stale-if-slow"
+            }
+        }
+        r_total = requests.post(f"{base_url}/load", json=payload_total, timeout=60)
+        r_total.raise_for_status()
+        df_total = pd.DataFrame(r_total.json().get("data", []))
+        if not df_total.empty:
+            df_total["FctItCosts.actualCost"] = pd.to_numeric(df_total["FctItCosts.actualCost"], errors="coerce")
+            totals = {
+                fy_old: df_total.loc[df_total["FctItCosts.fiscalYear"] == fy_old, "FctItCosts.actualCost"].sum(),
+                fy_new: df_total.loc[df_total["FctItCosts.fiscalYear"] == fy_new, "FctItCosts.actualCost"].sum()
+            }
+            print(f"[CubeClient] Totals for {org}: {fy_old}={totals[fy_old]:,.2f}, {fy_new}={totals[fy_new]:,.2f}")
+        else:
+            totals = {fy_old: None, fy_new: None}
+        df_combined.attrs["total_costs"] = {"org": org, **totals}
+
+        print(f"[CubeClient] Retrieved {len(df_combined)} rows ({len(top_services)} distinct services)")
+
+        return df_combined
+
+    def cost_delta_summary(self, org: str, fy_old: str, fy_new: str, top_n: int = 5) -> pd.DataFrame:
+        """
+        Service-level Delta FY_old -> FY_new für eine BU.
+        Phase 1: Top-N Services aus FY_new holen (aggregiert nach Service).
+        Phase 2: Für genau diese Services FY_old-Werte holen.
+        Dann pivotieren und Deltas berechnen.
+        """
+        if not self.use_cube:
+            raise RuntimeError("Cube.js must be active")
+
+        base_url = CUBEJS_API_URL.rstrip('/')
+
+        # --- Phase 1: Top-N Services in FY_new ---
+        print(f"[CubeClient] Delta summary: Top {top_n} services for {org} in {fy_new}")
+        payload_new = {
+            "query": {
+                "measures": ["FctItCosts.actualCost"],
+                "dimensions": ["DimService.serviceName", "FctItCosts.fiscalYear"],
+                "filters": [
+                    {"dimension": "DimOrg.businessUnit", "operator": "equals", "values": [org]},
+                    {"dimension": "FctItCosts.fiscalYear", "operator": "equals", "values": [fy_new]}
+                ],
+                "order": {"FctItCosts.actualCost": "desc"},
+                "limit": top_n,
+                "cacheMode": "stale-if-slow"
+            }
+        }
+        r_new = requests.post(f"{base_url}/load", json=payload_new, timeout=60)
+        r_new.raise_for_status()
+        df_new = pd.DataFrame(r_new.json().get("data", []))
+
+        if df_new.empty:
+            print(f"[CubeClient] Warning: no FY_new data for {org} in {fy_new}")
+            return df_new
+
+        df_new["FctItCosts.actualCost"] = pd.to_numeric(df_new["FctItCosts.actualCost"], errors="coerce")
+        top_services = df_new["DimService.serviceName"].unique().tolist()
+
+        # --- Phase 2: FY_old für die gleichen Services ---
+        print(f"[CubeClient] Delta summary: fetch {fy_old} for {len(top_services)} services")
+        payload_old = {
+            "query": {
+                "measures": ["FctItCosts.actualCost"],
+                "dimensions": ["DimService.serviceName", "FctItCosts.fiscalYear"],
+                "filters": [
+                    {"dimension": "DimOrg.businessUnit", "operator": "equals", "values": [org]},
+                    {"dimension": "FctItCosts.fiscalYear", "operator": "equals", "values": [fy_old]},
+                    {"dimension": "DimService.serviceName", "operator": "in", "values": top_services}
+                ],
+                "cacheMode": "stale-if-slow"
+            }
+        }
+        r_old = requests.post(f"{base_url}/load", json=payload_old, timeout=60)
+        r_old.raise_for_status()
+        df_old = pd.DataFrame(r_old.json().get("data", []))
+        if not df_old.empty:
+            df_old["FctItCosts.actualCost"] = pd.to_numeric(df_old["FctItCosts.actualCost"], errors="coerce")
+
+        # --- Kombinieren ohne Duplikate, dann pivotieren ---
+        df_comb = pd.concat([df_new, df_old], ignore_index=True)
+        df_comb = df_comb.drop_duplicates(
+            subset=["DimService.serviceName", "FctItCosts.fiscalYear"], keep="first"
+        )
+
+        pivot = (df_comb
+                 .groupby(["DimService.serviceName", "FctItCosts.fiscalYear"])["FctItCosts.actualCost"]
+                 .sum()
+                 .unstack())  # Spalten = FY_old/FY_new
+        # fehlende Spalten ggf. ergänzen
+        for fy in [fy_old, fy_new]:
+            if fy not in pivot.columns:
+                pivot[fy] = 0.0
+
+        pivot = pivot.reset_index().rename(columns={"DimService.serviceName": "service"})
+        # numerisch sicherstellen
+        pivot[fy_old] = pd.to_numeric(pivot[fy_old], errors="coerce").fillna(0.0)
+        pivot[fy_new] = pd.to_numeric(pivot[fy_new], errors="coerce").fillna(0.0)
+
+        # Deltas
+        pivot["delta_abs"] = pivot[fy_new] - pivot[fy_old]
+        pivot["delta_pct"] = pivot["delta_abs"] / pivot[fy_old].replace(0, pd.NA)
+
+        # zur Sicherheit nach größter Änderung sortieren (optional top_n wieder anwenden)
+        pivot = pivot.sort_values("delta_abs", ascending=False).reset_index(drop=True)
+
+        print(f"[CubeClient] Delta rows: {len(pivot)} (services={len(top_services)})")
+        # Einheitliche Spaltennamen für Downstream
+        return pivot.rename(columns={fy_old: "cost_old", fy_new: "cost_new"})
+
+
+
 
 
 
