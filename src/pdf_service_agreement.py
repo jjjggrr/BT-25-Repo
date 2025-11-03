@@ -6,7 +6,7 @@ from random import uniform, choice
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import cm
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from .models import ServicePrice
 from .config import PDF_DIR, DIM_APPS, SERVICES, APP_SERVICE_MAP, CURRENCY
 
@@ -38,7 +38,6 @@ def render_service_agreement_pdf(
     price_curr: Optional[ServicePrice] = None,
     price_prev: Optional[ServicePrice] = None,
 ) -> Path:
-    """Generate a rich Service Level Agreement (SLA) PDF per App using Platypus Paragraphs."""
     app_id = app["app_id"]
     app_name = app["app_name"]
     vendor = app["vendor"]
@@ -46,7 +45,6 @@ def render_service_agreement_pdf(
     fname = f"SLA_{app_id}_{fiscal_year}.pdf"
     fpath = PDF_DIR / fname
 
-    # === Setup ===
     doc = SimpleDocTemplate(
         str(fpath),
         pagesize=A4,
@@ -56,31 +54,33 @@ def render_service_agreement_pdf(
         bottomMargin=2 * cm,
     )
     styles = getSampleStyleSheet()
-    title_style = styles["Title"]
+    normal = ParagraphStyle("NormalTight", parent=styles["Normal"], spaceAfter=6)
     section_title = styles["Heading2"]
-    normal = styles["Normal"]
-
-    # Custom tighter paragraph spacing
-    normal = ParagraphStyle("NormalTight", parent=normal, spaceAfter=6)
 
     story = []
 
-    # === Header ===
-    story.append(Paragraph(f"Service Level Agreement – {app_name} ({app_id}) {fiscal_year}", title_style))
+    # === Meta Block ===
+    story.append(Paragraph(f"Service Level Agreement – {app_name} ({app_id}) {fiscal_year}", styles["Title"]))
     story.append(Spacer(1, 0.4 * cm))
-    story.append(
-        Paragraph(
-            f"<b>Vendor:</b> {vendor} | <b>Service:</b> {service_name} | <b>Fiscal Year:</b> {fiscal_year}",
-            normal,
-        )
+    meta_text = (
+        f"Meta:\n"
+        f"ServiceID: {app_id}\n"
+        f"ServiceName: {service_name}\n"
+        f"Vendor: {vendor}\n"
+        f"FiscalYear: {fiscal_year}\n"
+        f"Currency: {CURRENCY}\n"
+        f"Tower: {service_name.split()[0] if service_name else 'N/A'}\n"
+        f"DocType: SLA\n"
     )
+    story.append(Paragraph(f"<pre>{meta_text}</pre>", normal))
     story.append(Spacer(1, 0.5 * cm))
 
     # === 1) Contract Overview ===
+    story.append(Paragraph("###SECTION: contract_overview", normal))
     story.append(Paragraph("1. Contract Overview", section_title))
     story.append(
         Paragraph(
-            f"This Service Level Agreement (SLA) is a contract between <b>{vendor}</b> and <b>ExampleCompany AG</b> "
+            f"This Service Level Agreement (SLA) is a contract between <b>{vendor}</b> and ExampleCompany AG "
             f"regarding the delivery of <b>{app_name}</b> as part of the <b>{service_name}</b> service. "
             "The agreement defines performance obligations, service boundaries, and financial terms. "
             "All prices and metrics are valid for the stated fiscal year and may be revised annually.",
@@ -88,25 +88,30 @@ def render_service_agreement_pdf(
         )
     )
 
-    # === 2) Scope & Applicability ===
+    # === 2) Service Scope ===
     story.append(Spacer(1, 0.4 * cm))
+    story.append(Paragraph("###SECTION: service_scope", normal))
     story.append(Paragraph("2. Service Scope & Applicability", section_title))
     story.append(
         Paragraph(
-            f"The <b>{app_name}</b> application is provided as part of the enterprise <b>{service_name}</b> offering. "
+            f"The {app_name} application is provided as part of the enterprise {service_name} offering. "
             "Scope includes operational support, maintenance, and minor enhancement activities. "
-            "Major changes require separate Change Requests under the governance of the Tower Board.",
+            "Major changes require separate Change Requests under Tower governance.",
             normal,
         )
     )
 
     # === 3) Service Level Objectives ===
     story.append(Spacer(1, 0.4 * cm))
+    story.append(Paragraph("###SECTION: sla", normal))
     story.append(Paragraph("3. Service Level Objectives", section_title))
     for line in _random_sla_text():
         story.append(Paragraph(line, normal))
 
     # === 4) Pricing & Financial Model ===
+    story.append(Spacer(1, 0.4 * cm))
+    story.append(Paragraph("###SECTION: pricing", normal))
+    story.append(Paragraph("4. Pricing & Financial Model", section_title))
     delta_txt = ""
     reason = "No change"
     if price_prev and price_curr:
@@ -117,20 +122,19 @@ def render_service_agreement_pdf(
         elif delta > 0:
             reason = "Vendor pricing adjustment or new license model."
 
-    story.append(Spacer(1, 0.4 * cm))
-    story.append(Paragraph("4. Pricing & Financial Model", section_title))
     story.append(
         Paragraph(
-            f"Pricing Basis: license or subscription per user/month.<br/>"
-            f"Price Change: {delta_txt or 'Stable pricing FY over FY'}.<br/>"
-            f"Rationale: {reason}.<br/>"
-            f"Billing Currency: {CURRENCY}.",
+            f"PricingBasis: per_user_month<br/>"
+            f"PriceChange: {delta_txt or 'Stable pricing FY over FY'}<br/>"
+            f"Rationale: {reason}<br/>"
+            f"BillingCurrency: {CURRENCY}",
             normal,
         )
     )
 
-    # === 5) Dependencies & Integration Points ===
+    # === 5) Dependencies ===
     story.append(Spacer(1, 0.4 * cm))
+    story.append(Paragraph("###SECTION: dependencies", normal))
     story.append(Paragraph("5. Dependencies & Integration Points", section_title))
     story.append(
         Paragraph(
@@ -141,8 +145,9 @@ def render_service_agreement_pdf(
         )
     )
 
-    # === 6) Change History & FY Comparison ===
+    # === 6) Change History ===
     story.append(Spacer(1, 0.4 * cm))
+    story.append(Paragraph("###SECTION: changes", normal))
     story.append(Paragraph("6. Change History & FY Comparison", section_title))
     story.append(
         Paragraph(
@@ -153,8 +158,9 @@ def render_service_agreement_pdf(
         )
     )
 
-    # === 7) Operational & Governance Notes ===
+    # === 7) Operational Notes ===
     story.append(Spacer(1, 0.4 * cm))
+    story.append(Paragraph("###SECTION: operations", normal))
     story.append(Paragraph("7. Operational & Governance Notes", section_title))
     story.append(
         Paragraph(
@@ -165,7 +171,7 @@ def render_service_agreement_pdf(
         )
     )
 
-    # Footer
+    # === Footer ===
     story.append(Spacer(1, 0.8 * cm))
     story.append(
         Paragraph(
@@ -174,6 +180,5 @@ def render_service_agreement_pdf(
         )
     )
 
-    # === Build PDF ===
     doc.build(story)
     return fpath
