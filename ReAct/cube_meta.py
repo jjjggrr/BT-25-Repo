@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 CUBEJS_URL = os.environ.get("CUBEJS_API_URL", "http://localhost:4000/cubejs-api/v1")
 
 CACHE_PATH = "schema_cache.json"
+LLM_PATH = "schema_cache_llm.json"
 MAX_THREADS = 8
 LIMIT = 5000
 
@@ -94,9 +95,86 @@ def build_schema_cache():
     with open(CACHE_PATH, "w", encoding="utf-8") as f:
         json.dump(cache, f, indent=2)
 
+
     print(f"[cube_meta] Schema cache written → {CACHE_PATH} "
           f"({len(valid_values)} dimensions, {round(time.time()-start,1)}s)")
+
+    with open(LLM_PATH, "w", encoding="utf-8") as f:
+        json.dump(cache, f, indent=2)
+    try:
+        build_llm_schema(cache_path=LLM_PATH)
+    except Exception as e:
+        print(f"[cube_meta] Warning: failed to build LLM schema: {e}")
     return cache
+
+def build_llm_schema(
+    cache_path: str = "schema_cache.json",
+    out_path: str = "schema_cache_llm.json",
+    max_values_per_field: int = 50,   # Werte pro Feld begrenzen (LLM-freundlich)
+) -> dict:
+    import json, re
+
+    with open(cache_path, "r", encoding="utf-8") as f:
+        cache = json.load(f)
+
+    # --- 1) Cubes kompakt (nur Namen der Measures/Dimensions) ---
+    cubes = {}
+    for c in cache.get("meta", []):
+        cube_name = c.get("name")
+        if not cube_name:
+            continue
+        measures = [m.get("name") for m in c.get("measures", []) if m.get("name")]
+        dims     = [d.get("name") for d in c.get("dimensions", []) if d.get("name")]
+        if measures or dims:
+            cubes[cube_name] = {"measures": measures, "dimensions": dims}
+
+    # --- 2) valid_values filtern ---
+    # wir filtern Felder, deren *Feldname* (der Teil nach dem Punkt) wie ID/Key/UUID/… aussieht
+    skip_re = re.compile(r"^(id|uuid|guid|hash|key|rowid|created(_at)?|updated(_at)?|timestamp)$", re.IGNORECASE)
+
+    def is_skip_field(full_field_name: str) -> bool:
+        # z.B. "FctItCosts.id" -> "id"
+        tail = (full_field_name or "").split(".")[-1]
+        if skip_re.match(tail):
+            return True
+        # explizit FctItCosts.id entfernen (falls du ganz sicher gehen willst)
+        if full_field_name == "FctItCosts.id":
+            return True
+        return False
+
+    raw_valid = cache.get("valid_values", {})
+    filtered_valid = {}
+    for field, values in raw_valid.items():
+        if is_skip_field(field):
+            continue
+        # Werte listenkürzen & Duplikate entfernen, Reihenfolge beibehalten
+        if isinstance(values, list):
+            seen = set()
+            dedup = []
+            for v in values:
+                if v not in seen:
+                    seen.add(v)
+                    dedup.append(v)
+                if len(dedup) >= max_values_per_field:
+                    break
+            filtered_valid[field] = dedup
+        else:
+            # falls mal kein Listentyp – überspringen oder 1:1 kopieren
+            filtered_valid[field] = values
+
+    compact = {
+        "cubes": cubes,
+        "valid_values": filtered_valid,
+    }
+
+    with open(out_path, "w", encoding="utf-8") as f:
+        json.dump(compact, f, indent=2)
+
+    print(f"[cube_meta] Compact LLM schema written → {out_path} "
+          f"(valid fields: {len(filtered_valid)}/{len(raw_valid)})")
+    return compact
+
+
 
 
 
