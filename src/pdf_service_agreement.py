@@ -65,6 +65,7 @@ def render_service_agreement_pdf(
     meta_lines = [
         "Meta:",
         f"ServiceID: {app_id}",
+        f"AppName: {app_name}",
         f"ServiceName: {service_name}",
         f"Vendor: {vendor}",
         f"FiscalYear: {fiscal_year}",

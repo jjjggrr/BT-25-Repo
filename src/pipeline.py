@@ -10,6 +10,9 @@ from .pdf_parser import parse_structured_pdf
 import duckdb
 import pandas as pd
 from rich import print as rprint
+from chromadb import PersistentClient
+import shutil
+from pathlib import Path
 
 from .build_facts import build_run_facts, build_change_facts
 from .config import (
@@ -27,7 +30,7 @@ from .pdf_service_agreement import render_service_agreement_pdf
 from .validate import (
     validate_price_constancy, validate_pxq, validate_project_totals
 )
-
+CHROMA_PATH = Path("data/embeddings")
 
 # =========================
 # Helpers
@@ -345,6 +348,23 @@ def run_pipeline():
 
     # 10) Render PDFs → Parse → Embed → Delete
     rprint("[bold]10) Render PDFs per Service & Project + Parse + Embed + Delete[/bold]")
+
+    try:
+        client = PersistentClient(path=str(CHROMA_PATH))
+        for name in ("service_agreements", "project_briefs"):
+            try:
+                client.delete_collection(name)
+                print(f"[Pipeline] Deleted existing collection '{name}'")
+            except Exception as e:
+                print(f"[Pipeline] Collection '{name}' did not exist or could not be deleted: {e}")
+    except Exception as e:
+        print(f"[Pipeline] Could not connect to Chroma: {e}")
+
+    # --- Optional: Shard-Ordner leeren (UUID-Folders wie 0e424de7-...) ---
+    for sub in CHROMA_PATH.iterdir():
+        if sub.is_dir() and len(sub.name) == 36:  # UUID-like folder
+            print(f"[Pipeline] Removing old embedding shard: {sub}")
+            shutil.rmtree(sub, ignore_errors=True)
     emb = Embedder(_base_dir())
 
     # --- SLA PDFs für alle Apps ---
@@ -364,7 +384,7 @@ def run_pipeline():
 
             pdf_path = render_service_agreement_pdf(app, fy, price_curr, price_prev)
             process_pdf_for_embedding(pdf_path, emb)
-            pdf_path.unlink(missing_ok=True)
+            #pdf_path.unlink(missing_ok=True)
 
     # --- Project Briefs ---
     for p in projects:

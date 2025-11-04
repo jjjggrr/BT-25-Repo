@@ -10,3 +10,6 @@ torch==2.9.0
 chromadb==1.2.2
 duckdb~=1.4.1
 requests~=2.32.4
+pdfminer~=20191125
+protobuf~=6.33.0
+python-dotenv~=1.2.1

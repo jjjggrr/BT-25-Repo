@@ -201,6 +201,21 @@ DEFAULT_PRICE_DELTAS = {
     "SRV-HOS": 0.02,   # +2%
 }
 
+# === Custom Overrides (per App) ===
+
+# Preisänderungen (z. B. pro App statt pro Service)
+CUSTOM_PRICE_DELTAS: Dict[str, float] = {
+    "APP-0005": 0.05,  # Microsoft 365 +5 %
+    "APP-0006": 0.05,  # Microsoft Teams +5 %
+}
+
+# Mengenmultiplikatoren (FY25-spezifisch)
+CUSTOM_QUANTITY_MULTIPLIERS: Dict[str, Dict[str, float]] = {
+    "APP-0005": {"FY25": 1.10},  # Microsoft 365 +10 % Volumen
+    "APP-0006": {"FY25": 1.10},  # Microsoft Teams +10 % Volumen
+}
+
+
 # RUN quantity baseline: per org optional; default = 1.0
 RUN_QUANTITY_BASE: Dict[str, float] = {}  # leer → alle ORGs = 1.0
 RUN_MONTHLY_NOISE = 0.05

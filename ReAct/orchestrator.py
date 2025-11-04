@@ -3,11 +3,17 @@ from typing import Dict, Any, List, Tuple, Optional
 from difflib import get_close_matches
 import pandas as pd
 import numpy as np
+from datetime import datetime
+
+from sympy import false
+
+from llm_client import GeminiClient
 
 from cube_client import CubeClient
 from chroma_client import ChromaClient
 from config import RESULTS_DIR
 from cube_meta import load_schema_cache
+from dotenv import load_dotenv
 
 
 # ---------------------------------------------------------------------------
@@ -16,11 +22,29 @@ from cube_meta import load_schema_cache
 
 SCHEMA_CACHE = load_schema_cache(force_refresh=False)
 VALID_VALUES = SCHEMA_CACHE.get("valid_values", {})
+load_dotenv()
+useLLM = false
 
 
 # ---------------------------------------------------------------------------
 #  HELPERS
 # ---------------------------------------------------------------------------
+def _round_dataframe(df, cols=None, digits=2):
+    """Rundet numerische Spalten eines pandas-DataFrames (in place)."""
+
+
+    if df is None or df.empty:
+        return df
+
+    if cols is None:
+        cols = df.select_dtypes(include=["float", "int"]).columns
+
+    for c in cols:
+        if c in df.columns:
+            df[c] = df[c].apply(
+                lambda x: round(x, digits) if isinstance(x, (float, int)) else x
+            )
+    return df
 
 def normalize_value(value: str, dim_name: str, valid_values: dict) -> str:
     """Fuzzy-match a value to the closest known valid value for the dimension."""
@@ -34,6 +58,28 @@ def normalize_value(value: str, dim_name: str, valid_values: dict) -> str:
     idx = [v.lower() for v in vals].index(match[0])
     return vals[idx]
 
+def normalize_fiscal_year(fy_str: str | int | None) -> str:
+    """
+    Normalisiert Eingaben wie '2024', 2025, 'FY24', '24' → 'FY24'.
+    Nimmt an, dass FY = Kalenderjahr (vereinfacht).
+    """
+    if not fy_str:
+        return f"FY{datetime.now().year % 100}"  # z. B. FY25
+
+    s = str(fy_str).strip().upper()
+    if s.startswith("FY"):
+        return s
+    # numerisch z. B. 2024 -> 24
+    if s.isdigit():
+        year = int(s)
+        if year > 2000:
+            return f"FY{year % 100}"
+        else:
+            return f"FY{year:02d}"
+    # z. B. "24"
+    if len(s) == 2 and s.isdigit():
+        return f"FY{s}"
+    return s
 
 # ---------------------------------------------------------------------------
 #  PARSER
@@ -230,60 +276,99 @@ def orchestrate(question: str) -> Dict[str, Any]:
 
     cube = CubeClient()
     chroma = ChromaClient()
-    results = []
+    subquery_results = []  # für Multi-query-Flow
 
-    # --- Multi-query mode ---
+    # === Multi-query mode ===
     if subqueries:
         print(f"[Orchestrator] Detected {len(subqueries)} subqueries: {[s.get('type') for s in subqueries]}")
+
         for sub in subqueries:
             t = str(sub.get("type", "")).strip().lower()
 
-            # --- Top cost drivers ---
+            # --- 1) Drivers ---
             if t == "drivers":
                 print(f"[Orchestrator] Executing driver query for {sub.get('org')} FY {sub.get('fy_old')} → {sub.get('fy_new')}")
                 df = cube.top_cost_drivers(sub.get("org"), sub.get("fy_old"), sub.get("fy_new"), top_n=5)
+                _round_dataframe(df, digits=2)  # <<–– hier
                 totals = getattr(df, "attrs", {}).get("total_costs", {})
-                results.append({
+                # totals-Dict ebenfalls runden
+                totals = {k: round(v, 2) if isinstance(v, (float, int)) else v for k, v in totals.items()}
+
+                subquery_results.append({
                     "type": t,
                     "data": df.to_dict(orient="records"),
-                    "totals": totals  # carry totals forward explicitly
+                    "totals": totals
                 })
-
                 continue
 
-            # --- Why service costs high ---
+            # --- 2) Why Service Costs High ---
             if t == "why_service":
                 print(f"[Orchestrator] Executing why_service query for {sub.get('service')} ({sub.get('service_dim')})")
-                df = cube.total_cost_by_service_fy(
-                    sub.get("org"),
-                    sub.get("service"),
-                    sub.get("service_dim")
+
+                # 1) Numerik aus Cube.js
+                df = cube.total_cost_by_service_fy(sub.get("org"), sub.get("service"), sub.get("service_dim"))
+                _round_dataframe(df, digits=2)
+                numeric_data = df.to_dict(orient="records")
+
+                # delta_pct separat als Prozent formatieren
+                for r in numeric_data:
+                    if "delta_pct" in r and isinstance(r["delta_pct"], (float, int)):
+                        r["delta_pct"] = f"{round(r['delta_pct'] * 100, 1)}%"
+
+                # 2) FYs robust setzen
+                fy_new = normalize_fiscal_year(sub.get("fy_new"))
+                fy_old = normalize_fiscal_year(sub.get("fy_old"))
+                if not fy_new and fy_old:
+                    fy_new = fy_old
+                    fy_old = None
+                if fy_new and not fy_old:
+                    # heuristik: wenn nur FY25 gegeben ist, nimm das Vorjahr als FY24
+                    try:
+                        y = int(fy_new.replace("FY", ""))
+                        fy_old = f"FY{y - 1:02d}"
+                    except Exception:
+                        fy_old = fy_new  # fallback, not ideal but avoids None
+
+                # 3) RAG-Query-Text
+                query_text = f"Reasons for {sub.get('service')} cost change {fy_old} vs {fy_new}"
+
+                # 4) RAG-Kontext (über App-Name, nicht service_id)
+                context_strings = chroma.query_expanded_for_service(
+                    question=query_text,
+                    app_name=sub.get("service"),  # <<--- WICHTIG: App-Name übergeben
+                    fiscal_years=[fy_old, fy_new],  # z. B. ["FY24","FY25"]
+                    section_filter=["pricing", "changes", "sla"],
+                    top_k_init=5,
+                    max_snippets=6,
+                    max_chars_per_snippet=320
                 )
-                text = chroma.query(
-                    [f"{sub.get('service')} {sub.get('org')} cost changes FY25 FY24"], k=5
-                )
-                results.append({
+
+                # 5) Für format_for_llm() in Dicts verpacken
+                context_docs = [{"text": s} for s in context_strings]
+
+                subquery_results.append({
                     "type": t,
-                    "numeric": df.to_dict(orient="records"),
-                    "textual": text
+                    "numeric": numeric_data,
+                    "textual": context_docs
                 })
                 continue
 
-            # --- Country totals ---
+            # --- 3) Totals (z. B. Country) ---
             if t == "totals":
                 print(f"[Orchestrator] Executing totals query for {sub.get('country')} ({sub.get('country_dim')})")
-                df = cube.total_cost_by_country(
-                    sub.get("country"),
-                    sub.get("country_dim")
-                )
-                results.append({"type": t, "data": df.to_dict(orient="records")})
+                df = cube.total_cost_by_country(sub.get("country"), sub.get("country_dim"))
+                _round_dataframe(df, digits=2)
+                subquery_results.append({
+                    "type": t,
+                    "data": df.to_dict(orient="records")
+                })
                 continue
 
-        # --- Combine & persist ---
+        # === Combine & persist ===
         result = {
             "question": question,
             "parsed": parsed,
-            "subquery_results": results,
+            "subquery_results": subquery_results,
             "executed_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
         }
 
@@ -294,21 +379,37 @@ def orchestrate(question: str) -> Dict[str, Any]:
             json.dump(result, f, indent=2)
         print(f"[Orchestrator] Multi-query result written to {out_path}")
 
-        # --- LLM formatting ---
+        # === LLM Formatting ===
         llm_input = format_for_llm(result)
         llm_path = out_path.replace(".json", "_llm.json")
         with open(llm_path, "w", encoding="utf-8") as f:
             json.dump(llm_input, f, indent=2, default=_json_safe)
         print(f"[Orchestrator] LLM-formatted data written to {llm_path}")
+
+        # === LLM Query ===
+        if useLLM:
+            from llm_client import GeminiClient
+
+            try:
+                llm_client = GeminiClient(model="gemini-2.5-flash")
+                prompt = f"Given the following analytical results and context, answer this question: {question}"
+                answer = llm_client.generate_answer(prompt=prompt, context=llm_input)
+                answer_path = llm_path.replace("_llm.json", "_llm_answer.txt")
+                with open(answer_path, "w", encoding="utf-8") as f:
+                    f.write(answer)
+                print(f"[Orchestrator] LLM answer written to {answer_path}")
+            except Exception as e:
+                print(f"[Orchestrator] LLM generation failed: {e}")
+
         return result, out_path
 
-    # --- Single-query fallback ---
+    # === Single-query fallback ===
     print("[Orchestrator] No explicit subqueries detected, running standard pipeline.")
     df_service = cube.total_cost_by_service_fy(parsed["org"], parsed["service"], parsed["service_dimension"])
     df_drivers = cube.top_cost_drivers(parsed["org"], parsed["fy_old"], parsed["fy_new"], top_n=parsed["intent"]["top_n"])
     df_delta = cube.cost_delta_summary(parsed["org"], parsed["fy_old"], parsed["fy_new"])
     queries = build_retrieval_queries(parsed)
-    docs = chroma.query(queries, k=5)
+    docs = chroma.query(queries, top_k=5)
 
     result = {
         "question": question,
@@ -339,7 +440,9 @@ def orchestrate(question: str) -> Dict[str, Any]:
     with open(llm_path, "w", encoding="utf-8") as f:
         json.dump(llm_input, f, indent=2)
     print(f"[Orchestrator] LLM-formatted data written to {llm_path}")
+
     return result, out_path
+
 
 
 def format_for_llm(result: dict) -> dict:
@@ -423,6 +526,13 @@ def format_for_llm(result: dict) -> dict:
                 }
                 for _, row in df_pivot.iterrows()
             ]
+            for d in out["drivers"]:
+                for k in ["FY24", "FY25", "delta_abs"]:
+                    if d.get(k) is not None:
+                        d[k] = round(d[k], 2)
+                if d.get("delta_pct") is not None:
+                    d["delta_pct"] = f"{round(d['delta_pct'] * 100, 1)}%"
+
 
         # --- App Costs (e.g. Microsoft 365) ---
         elif t == "why_service" and sub.get("numeric"):
@@ -461,6 +571,15 @@ def format_for_llm(result: dict) -> dict:
                 }
                 for _, row in pivot.iterrows()
             ]
+            for a in out["app_costs"]:
+                for k in [
+                    "FY24_cost", "FY25_cost", "FY24_price", "FY25_price",
+                    "FY24_quantity", "FY25_quantity", "delta_abs"
+                ]:
+                    if a.get(k) is not None:
+                        a[k] = round(a[k], 2)
+                if a.get("delta_pct") is not None:
+                    a["delta_pct"] = f"{round(a['delta_pct'] * 100, 1)}%"
 
             if sub.get("textual"):
                 out["context_docs"].extend([d["text"] for d in sub["textual"]])
@@ -471,7 +590,8 @@ def format_for_llm(result: dict) -> dict:
             for row in sub["data"]:
                 name = row.get("DimCountry.countryName")
                 if name:
-                    out["country_totals"][name] = float(row.get("FctItCosts.actualCost", 0))
+                    val = float(row.get("FctItCosts.actualCost", 0))
+                    out["country_totals"][name] = round(val, 2)
 
     return out
 

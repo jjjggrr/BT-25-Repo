@@ -54,6 +54,7 @@ class Embedder:
                 "doc_type": meta.get("DocType", "SLA"),
                 "fiscal_year": meta.get("FiscalYear"),
                 "service_id": meta.get("ServiceID"),
+                "app_name": meta.get("AppName"),
                 "section": section,
             }
             self.sa_col.add(
