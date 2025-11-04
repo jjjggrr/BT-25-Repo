@@ -1,59 +1,100 @@
+# llm_client.py
 import os
-from typing import Dict, Any
 from google import genai
 from google.genai import types
+from dotenv import load_dotenv
 
+load_dotenv()
 
 class GeminiClient:
-    def __init__(self, model: str = "gemini-2.5-flash", api_key: str = None):
-        api_key = api_key or os.getenv("GEMINI_API_KEY")
-        if not api_key:
-            raise ValueError("Environment variable GEMINI_API_KEY nicht gesetzt.")
-        self.client = genai.Client(api_key=api_key)
-        self.model = model
+    def __init__(self, model="gemini-2.5-flash"):
+        # Neue Syntax: API-Key wird direkt beim Client-Objekt übergeben
+        self.client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+        self.model_name = model
 
-    def generate_answer(
-        self,
-        prompt: str,
-        context: Dict[str, Any],
-        max_output_tokens: int = 2000,
-        temperature: float = 0.7
-    ) -> str:
-        """
-        Sendet den Prompt + Kontext an das Modell und gibt eine Textantwort zurück.
-        """
-        context_text = f"Context:\n{context}"
-        question_text = f"Question:\n{prompt}"
+    def generate_answer(self, prompt: str, context: str = None) -> str:
+        try:
+            full_prompt = f"{prompt}\n\nContext:\n{context or ''}"
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=full_prompt,
+                config=types.GenerateContentConfig(
+                    max_output_tokens=2048,
+                    temperature=0.4
+                ),
+            )
 
-        contents = types.Content(
-            role="user",
-            parts=[
-                types.Part.from_text(text=context_text),
-                types.Part.from_text(text=question_text)
-            ]
-        )
+            if not response or not getattr(response, "candidates", None):
+                return "No content returned."
 
-        response = self.client.models.generate_content(
-            model=self.model,
-            contents=contents,
-            config=types.GenerateContentConfig(
-                max_output_tokens=max_output_tokens,
-                temperature=temperature,
-            ),
-        )
-        print("=== GEMINI RAW RESPONSE ===")
-        print(response)
-        print("============================")
-
-        # --- Sicher extrahieren ---
-        if hasattr(response, "text") and response.text:
-            return response.text.strip()
-
-        # Fallback: Suche Text in "output" oder "candidates"
-        if hasattr(response, "candidates") and response.candidates:
             parts = response.candidates[0].content.parts
-            if parts:
-                text_parts = [p.text for p in parts if hasattr(p, "text")]
-                return "\n".join(text_parts).strip() if text_parts else "No text content."
+            text = "\n".join(p.text for p in parts if hasattr(p, "text"))
+            return text.strip() if text else "No text output."
+        except Exception as e:
+            print(f"[GeminiClient] Error during generation: {e}")
+            return None
 
-        return "No content returned."
+    def generate_queries(self, question: str, schema: dict) -> list[dict]:
+        import json
+
+        schema_text = json.dumps(schema, indent=2)
+        prompt = f"""
+You are a Cube.js query generator.
+Given this schema and its valid values, create one or more JSON queries
+to answer the question: '{question}'.
+
+Rules:
+- Each query must be valid JSON.
+- If a comparison (like FY24 vs FY25) is required, output multiple queries separated by '|'.
+- Do NOT explain anything, only output queries.
+Schema:
+{schema_text}
+"""
+        try:
+            response = self.client.models.generate_content(
+                model=self.model_name,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    max_output_tokens=2048,
+                    temperature=0.3
+                ),
+            )
+
+            # Safety: empty or missing candidates
+            if not response or not getattr(response, "candidates", None):
+                print("[GeminiClient] No candidates returned from model.")
+                return []
+
+            # Extract raw text
+            parts = response.candidates[0].content.parts
+            if not parts:
+                print("[GeminiClient] No content parts found in response.")
+                return []
+
+            text = parts[0].text if hasattr(parts[0], "text") else None
+            if not text:
+                print("[GeminiClient] No textual output from Gemini.")
+                return []
+
+            print("\n=== GEMINI RAW QUERY OUTPUT ===")
+            print(text)
+            print("=== END RAW QUERY OUTPUT ===\n")
+
+            queries = []
+            for i, part in enumerate(text.split("|"), start=1):
+                part = part.strip()
+                if not part:
+                    continue
+                try:
+                    q = json.loads(part)
+                    queries.append(q)
+                    print(f"[GeminiClient] Parsed Query #{i}: {json.dumps(q, indent=2)[:300]}...")
+                except json.JSONDecodeError:
+                    print(f"[GeminiClient] ⚠️ Skipped malformed query fragment #{i}: {part[:160]}")
+
+            print(f"[GeminiClient] → Parsed {len(queries)} valid queries.\n")
+            return queries
+
+        except Exception as e:
+            print(f"[GeminiClient] Error generating queries: {e}")
+            return []
