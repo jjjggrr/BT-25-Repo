@@ -237,6 +237,34 @@ class CubeClient:
 
         return df_combined
 
+    # cube_client.py
+
+    def query(self, q: dict) -> pd.DataFrame:
+        if not isinstance(q, dict):
+            raise TypeError("CubeClient.query expects a dict")
+        if not self.use_cube:
+            raise RuntimeError("Cube.js must be active")
+
+        # LLM benutzt 'member' – Cube.js will 'dimension'
+        for f in q.get("filters", []) or []:
+            if "member" in f and "dimension" not in f:
+                f["dimension"] = f.pop("member")
+
+        # Filter unzulässige timeDimensions (z. B. fiscalYear)
+        valid_time_dims = []
+        for td in q.get("timeDimensions", []) or []:
+            if "fiscalYear" not in (td.get("dimension") or ""):
+                valid_time_dims.append(td)
+        q["timeDimensions"] = valid_time_dims
+
+        return self.query_cubejs(
+            measures=q.get("measures", []),
+            dimensions=q.get("dimensions", []),
+            filters=q.get("filters", []),
+            timeDimensions=q.get("timeDimensions", []),
+            limit=q.get("limit", 5000),
+        )
+
     def cost_delta_summary(self, org: str, fy_old: str, fy_new: str, top_n: int = 5) -> pd.DataFrame:
         """
         Service-level Delta FY_old -> FY_new für eine BU.

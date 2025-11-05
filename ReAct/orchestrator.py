@@ -45,6 +45,7 @@ def _round_dataframe(df, cols=None, digits=2):
             df[c] = df[c].apply(lambda x: round(x, digits) if isinstance(x, (float, int)) else x)
     return df
 
+
 def normalize_value(value: str, dim_name: str, valid_values: dict) -> str:
     """Fuzzy-match a value to the closest known valid value for the dimension."""
     if not value or dim_name not in valid_values:
@@ -187,6 +188,8 @@ def split_into_subqueries(q: str, parsed: dict) -> List[Dict[str, Any]]:
 
     return subs
 
+
+
 # ---------------------------------------------------------------------------
 #  BUILD RETRIEVAL QUERIES
 # ---------------------------------------------------------------------------
@@ -217,17 +220,45 @@ def _json_safe(obj):
         pass
     return obj
 
+def _extract_fy_from_filters(q: dict) -> str | None:
+    for f in q.get("filters", []) or []:
+        dim = f.get("dimension") or f.get("member")
+        if (dim or "").endswith("FctItCosts.fiscalYear") or (dim or "") == "FctItCosts.fiscalYear":
+            vals = f.get("values") or []
+            if isinstance(vals, list) and vals:
+                return str(vals[0]).strip().upper()
+    return None
+
+def _classify_llm_query(q: dict) -> str:
+    dims = set(q.get("dimensions", []) or [])
+    # Country totals?
+    if "DimCountry.countryName" in dims:
+        return "totals"
+    # App/Service detail (why_service)?
+    if "DimApp.appName" in dims or "DimService.serviceName" in dims:
+        # Wenn nur eine App/Service gefiltert wird → why_service, sonst drivers
+        names = {"DimApp.appName", "DimService.serviceName"}
+        filtered = [f for f in (q.get("filters") or []) if (f.get("dimension") or f.get("member")) in names]
+        if filtered:
+            # Eine konkrete App/Service im Filter → warum teuer?
+            return "why_service"
+        return "drivers"
+    return "drivers"
+
 # ---------------------------------------------------------------------------
 #  LLM-FORMAT
 # ---------------------------------------------------------------------------
 
 def format_for_llm(result: dict) -> dict:
     """
-    Convert multi-query or fallback result into LLM-friendly structure.
-    Includes Top-5 union logic, pivoted cost comparisons, and delta metrics.
+    Vereinheitlicht numerische Ergebnisse (aus deterministischem oder LLM-Flow)
+    in ein LLM-freundliches Format mit Top-5-Deltas, App-Kosten, Ländersummen
+    und Kontexttexten. Robuster gegen fehlende Spalten oder inkonsistente Benennungen.
     """
+    import pandas as pd
+
     parsed = result.get("parsed", {})
-    subs = result.get("subquery_results", [])
+    subs = result.get("subquery_results", []) or result.get("cube_results", [])
 
     out = {
         "summary": {
@@ -244,41 +275,57 @@ def format_for_llm(result: dict) -> dict:
     for sub in subs:
         t = sub.get("type")
 
-        # --- Drivers (Top 5 per FY, union) ---
+        # ------------------------------------------------------------------
+        # DRIVERS
+        # ------------------------------------------------------------------
         if t == "drivers" and sub.get("data"):
-            df = pd.DataFrame(sub["data"]).rename(columns={
-                "DimService.serviceName": "service",
+            df = pd.DataFrame(sub["data"])
+
+            # Erkenne Spaltennamen flexibel
+            name_col = None
+            for cand in ["DimService.serviceName", "DimApp.appName", "service", "app"]:
+                if cand in df.columns:
+                    name_col = cand
+                    break
+            if not name_col:
+                dim_guess = [c for c in df.columns if c.startswith("Dim") and c.endswith((".serviceName", ".appName"))]
+                name_col = dim_guess[0] if dim_guess else None
+            if not name_col or "FctItCosts.actualCost" not in df.columns:
+                continue
+
+            # FY-Spalte ggf. rekonstruieren
+            if "FctItCosts.fiscalYear" not in df.columns:
+                df["FctItCosts.fiscalYear"] = "FY?"
+
+            df = df.rename(columns={
+                name_col: "service",
                 "FctItCosts.fiscalYear": "fy",
                 "FctItCosts.actualCost": "cost",
             })
             df["cost"] = pd.to_numeric(df["cost"], errors="coerce")
             df_grouped = df.groupby(["service", "fy"], as_index=False)["cost"].sum()
 
+            fy_cols = df_grouped["fy"].unique().tolist()
             top_24 = (
                 df_grouped[df_grouped["fy"] == "FY24"]
                 .sort_values("cost", ascending=False)
                 .head(5)["service"].tolist()
+                if "FY24" in fy_cols else []
             )
             top_25 = (
                 df_grouped[df_grouped["fy"] == "FY25"]
                 .sort_values("cost", ascending=False)
                 .head(5)["service"].tolist()
+                if "FY25" in fy_cols else []
             )
-            top_union = sorted(set(top_24 + top_25))
-            df_filtered = df_grouped[df_grouped["service"].isin(top_union)]
+            top_union = sorted(set(top_24 + top_25)) or df_grouped.sort_values("cost", ascending=False).head(5)["service"].tolist()
 
+            df_filtered = df_grouped[df_grouped["service"].isin(top_union)]
             df_pivot = df_filtered.pivot(index="service", columns="fy", values="cost").reset_index()
+
             if "FY24" in df_pivot.columns and "FY25" in df_pivot.columns:
                 df_pivot["delta_abs"] = df_pivot["FY25"] - df_pivot["FY24"]
-                df_pivot["delta_pct"] = df_pivot["delta_abs"] / df_pivot["FY24"]
-
-            totals = sub.get("totals", {})
-            if totals:
-                out["drivers_summary"] = {
-                    "org": totals.get("org"),
-                    "total_FY24": round(float(totals.get("FY24") or 0), 2),
-                    "total_FY25": round(float(totals.get("FY25") or 0), 2),
-                }
+                df_pivot["delta_pct"] = df_pivot["delta_abs"] / df_pivot["FY24"].replace(0, pd.NA)
 
             out["drivers"] = []
             for _, row in df_pivot.iterrows():
@@ -287,32 +334,46 @@ def format_for_llm(result: dict) -> dict:
                     "FY24": float(row.get("FY24")) if "FY24" in df_pivot.columns else None,
                     "FY25": float(row.get("FY25")) if "FY25" in df_pivot.columns else None,
                     "delta_abs": float(row["delta_abs"]) if "delta_abs" in df_pivot.columns else None,
-                    "delta_pct": float(row["delta_pct"]) if "delta_pct" in df_pivot.columns else None,
+                    "delta_pct": f"{round(row['delta_pct'] * 100, 1)}%" if not pd.isna(row.get("delta_pct")) else None,
                 }
                 for k in ["FY24", "FY25", "delta_abs"]:
                     if rec.get(k) is not None:
                         rec[k] = round(rec[k], 2)
-                if rec.get("delta_pct") is not None:
-                    rec["delta_pct"] = f"{round(rec['delta_pct'] * 100, 1)}%"
                 out["drivers"].append(rec)
 
-        # --- App Costs (e.g. Microsoft 365) ---
+        # ------------------------------------------------------------------
+        # WHY SERVICE
+        # ------------------------------------------------------------------
         elif t == "why_service" and sub.get("numeric"):
-            df = pd.DataFrame(sub["numeric"]).rename(columns={
+            df = pd.DataFrame(sub["numeric"])
+            if df.empty:
+                continue
+
+            df = df.rename(columns={
                 "DimApp.appName": "app",
+                "DimService.serviceName": "app",
                 "FctItCosts.fiscalYear": "fy",
                 "FctItCosts.actualCost": "cost",
                 "FctItCosts.price": "price",
                 "FctItCosts.quantity": "quantity",
             })
+
             for c in ["cost", "price", "quantity"]:
                 if c in df.columns:
                     df[c] = pd.to_numeric(df[c], errors="coerce")
 
-            pivot = df.pivot(index="app", columns="fy", values="cost").reset_index()
+            # --- sicherstellen, dass Kombinationen eindeutig sind ---
+            df_grouped = (
+                df.groupby(["app", "fy"], as_index=False)["cost"]
+                .sum()
+            )
+
+            pivot = df_grouped.pivot(index="app", columns="fy", values="cost").reset_index()
+
+            # Falls beide FYs existieren, Deltas berechnen
             if "FY24" in pivot.columns and "FY25" in pivot.columns:
                 pivot["delta_abs"] = pivot["FY25"] - pivot["FY24"]
-                pivot["delta_pct"] = pivot["delta_abs"] / pivot["FY24"]
+                pivot["delta_pct"] = pivot["delta_abs"] / pivot["FY24"].replace(0, pd.NA)
 
             out["app_costs"] = []
             for _, row in pivot.iterrows():
@@ -320,83 +381,181 @@ def format_for_llm(result: dict) -> dict:
                     "app": row["app"],
                     "FY24_cost": float(row.get("FY24")) if "FY24" in pivot.columns else None,
                     "FY25_cost": float(row.get("FY25")) if "FY25" in pivot.columns else None,
-                    "FY24_price": df[df["fy"] == "FY24"]["price"].mean(),
-                    "FY25_price": df[df["fy"] == "FY25"]["price"].mean(),
-                    "FY24_quantity": df[df["fy"] == "FY24"]["quantity"].sum(),
-                    "FY25_quantity": df[df["fy"] == "FY25"]["quantity"].sum(),
-                    "delta_abs": float(row["delta_abs"]) if "delta_abs" in pivot.columns else None,
-                    "delta_pct": float(row["delta_pct"]) if "delta_pct" in pivot.columns else None,
+                    "delta_abs": float(row.get("delta_abs")) if "delta_abs" in pivot.columns else None,
+                    "delta_pct": f"{round(row['delta_pct'] * 100, 1)}%" if not pd.isna(row.get("delta_pct")) else None,
                 }
-                for k in ["FY24_cost", "FY25_cost", "FY24_price", "FY25_price", "FY24_quantity", "FY25_quantity", "delta_abs"]:
+                for k in ["FY24_cost", "FY25_cost", "delta_abs"]:
                     if rec.get(k) is not None:
                         rec[k] = round(rec[k], 2)
-                if rec.get("delta_pct") is not None:
-                    rec["delta_pct"] = f"{round(rec['delta_pct'] * 100, 1)}%"
                 out["app_costs"].append(rec)
 
             if sub.get("textual"):
                 out["context_docs"].extend([d["text"] for d in sub["textual"]])
 
-        # --- Country Totals ---
+        # ------------------------------------------------------------------
+        # COUNTRY TOTALS
+        # ------------------------------------------------------------------
         elif t == "totals" and sub.get("data"):
             for row in sub["data"]:
-                name = row.get("DimCountry.countryName")
+                name = row.get("DimCountry.countryName") or row.get("country")
                 if name:
                     val = float(row.get("FctItCosts.actualCost", 0))
                     out["country_totals"][name] = round(val, 2)
 
     return out
 
+
+
 # ---------------------------------------------------------------------------
 #  MAIN ORCHESTRATION LOGIC
 # ---------------------------------------------------------------------------
 
 def orchestrate(question: str):
+    global answer
     print(f"[Orchestrator] Starting orchestration for query: {question}")
 
     parsed = parse_question(question, VALID_VALUES)
     subqueries = split_into_subqueries(question, parsed)
 
-    # ===== LLM-Modus (zweistufig), nur wenn explizit aktiviert =====
+    # ===== LLM-MODUS: UNFORMATIERTES SAMMELN + CHROMA-KONTEXT =====
     if useLLM and GeminiClient is not None:
-        print(f"[Orchestrator] Running in LLM mode ({llm_mode})")
-        # kompaktes Schema für das LLM
-        schema = build_llm_schema()
+        print(f"[Orchestrator] Running in simplified LLM mode with Chroma context ({llm_mode})")
 
+        import pandas as pd
+        from copy import deepcopy
+
+        schema = build_llm_schema()
         llm = GeminiClient(model="gemini-2.5-flash")
         cube = CubeClient()
+        chroma = ChromaClient()
+        LLM_DEBUG = os.getenv("LLM_DEBUG", "false").lower() == "true"
 
-        # 1) LLM generiert Cube.js-Queries
+        # --- 1) Query-Generierung ---
         queries = []
-        if llm_mode in ("generate_queries", "full"):
-            try:
+        try:
+            if llm_mode in ("generate_queries", "full"):
                 queries = llm.generate_queries(question, schema)
                 print(f"[Orchestrator] LLM generated {len(queries)} Cube.js queries.")
-            except Exception as e:
-                print(f"[Orchestrator] LLM query generation failed: {e}")
+                if LLM_DEBUG:
+                    os.makedirs(RESULTS_DIR, exist_ok=True)
+                    debug_q_path = os.path.join(RESULTS_DIR, "debug_llm_queries.json")
+                    with open(debug_q_path, "w", encoding="utf-8") as f:
+                        json.dump(queries, f, indent=2)
+                    print(f"[DEBUG] Saved raw LLM queries to {debug_q_path}")
+        except Exception as e:
+            print(f"[Orchestrator] LLM query generation failed: {e}")
 
-        # 2) Ausführen
-        cube_results = []
+        # --- 2) Cube.js-Abfragen ausführen ---
+        raw_results = []
         for i, q in enumerate(queries, 1):
             try:
                 print(f"[Orchestrator] Executing Cube.js query #{i}: {q}")
-                cube_results.append(cube.query(q))
+                # normalize 'member' → 'dimension'
+                for f in q.get("filters", []) or []:
+                    if "member" in f and "dimension" not in f:
+                        f["dimension"] = f.pop("member")
+
+                df = cube.query(deepcopy(q))
+                raw_results.append({
+                    "query_index": i,
+                    "query": q,
+                    "rows": df.to_dict(orient="records"),
+                    "columns": df.columns.tolist(),
+                })
             except Exception as e:
                 print(f"[Orchestrator] Failed query #{i}: {e}")
+                raw_results.append({"query_index": i, "query": q, "error": str(e)})
 
-        # 3) Ergebnisse fürs LLM aufbereiten und interpretieren
-        if llm_mode in ("interpret_results", "full") and cube_results:
-            llm_input = [format_for_llm({"parsed": parsed, "subquery_results": [{"type": "drivers", "data": r} for r in cube_results]})]
+        # --- 3) Kontext aus ChromaDB holen (wie im deterministischen Modus) ---
+        chroma_docs = []
+        try:
+            # Re-parse question using schema_cache (for fuzzy match, same as deterministic flow)
+            parsed_llm = parse_question(question, VALID_VALUES)
+
+            fy_old = parsed_llm.get("fy_old") or parsed.get("fy_old") or "FY24"
+            fy_new = parsed_llm.get("fy_new") or parsed.get("fy_new") or "FY25"
+            org = parsed_llm.get("org") or parsed.get("org") or "Corporate"
+            service = parsed_llm.get("service") or parsed.get("service")
+            service_dim = parsed_llm.get("service_dimension") or parsed.get("service_dimension")
+
+            # If still nothing detected (extreme edge case), try to infer from LLM queries
+            if not service:
+                for q in queries:
+                    for f in q.get("filters", []):
+                        val = (f.get("values") or [None])[0]
+                        if f.get("member") in ["DimApp.appName", "DimService.serviceName"] and val:
+                            service = val
+                            print(f"[Orchestrator] Auto-detected service from LLM query: {service}")
+                            break
+                    if service:
+                        break
+
+            # --- Chroma-Query (wie im deterministischen Pfad) ---
+            if service:
+                query_text = f"Reasons for {service} cost change {fy_old} vs {fy_new}"
+                chroma_docs = chroma.query_expanded_for_service(
+                    question=query_text,
+                    app_name=service,
+                    fiscal_years=[fy_old, fy_new],
+                    section_filter=["pricing", "changes", "sla"],
+                    top_k_init=5,
+                    max_snippets=6,
+                    max_chars_per_snippet=320,
+                )
+                print(f"[Orchestrator] Retrieved {len(chroma_docs)} contextual documents from ChromaDB.")
+            else:
+                # Optional generic fallback for non-service queries
+                query_text = f"General IT cost overview for {fy_new}"
+                chroma_docs = chroma.query(question=query_text, top_k=5)
+                print(f"[Orchestrator] Retrieved {len(chroma_docs)} generic context documents.")
+
+        except Exception as e:
+            print(f"[Orchestrator] ChromaDB retrieval failed: {e}")
+            chroma_docs = []
+
+            if service:
+                query_text = f"Reasons for {service} cost change {fy_old} vs {fy_new}"
+                chroma_docs = chroma.query_expanded_for_service(
+                    question=query_text,
+                    app_name=service,
+                    fiscal_years=[fy_old, fy_new],
+                    section_filter=["pricing", "changes", "sla"],
+                    top_k_init=5,
+                    max_snippets=6,
+                    max_chars_per_snippet=320,
+                )
+                print(f"[Orchestrator] Retrieved {len(chroma_docs)} contextual documents from ChromaDB.")
+        except Exception as e:
+            print(f"[Orchestrator] ChromaDB retrieval failed: {e}")
+            chroma_docs = []
+
+        # --- 4) Rohdaten + Kontext speichern ---
+        ts = int(time.time())
+        raw_bundle = {
+            "question": question,
+            "cube_results_raw": raw_results,
+            "context_docs": chroma_docs,
+        }
+        raw_path = os.path.join(RESULTS_DIR, f"raw_llm_cube_results_{ts}.json")
+        os.makedirs(RESULTS_DIR, exist_ok=True)
+        with open(raw_path, "w", encoding="utf-8") as f:
+            json.dump(raw_bundle, f, indent=2)
+        print(f"[Orchestrator] Saved raw Cube.js + Chroma results to {raw_path}")
+
+        # --- 5) Zweiter LLM-Aufruf (Interpretation mit Kontext) ---
+        if llm_mode in ("interpret_results", "full") and raw_results:
             prompt = (
-                f"You are an expert IT cost analyst.\n"
+                "You are an  IT cost analyst.\n"
                 f"Question:\n{question}\n\n"
-                f"Analytical results:\n{json.dumps(llm_input, indent=2)}\n\n"
-                f"Provide a concise, factual explanation."
+                "Below are raw Cube.js query results and retrieved contextual documents.\n"
+                "Analyze them together to identify top cost drivers, year-over-year changes, "
+                "and root causes for cost differences.\n\n"
+                f"RAW RESULTS:\n{json.dumps(raw_results, indent=2)}\n\n"
+                f"CONTEXT DOCS:\n{json.dumps(chroma_docs, indent=2)}\n\n"
+                "Provide a concise, factual summary."
             )
             try:
-                answer = llm.generate_answer(prompt=prompt, context=None)
-                ts = int(time.time())
-                os.makedirs(RESULTS_DIR, exist_ok=True)
+                answer = llm.generate_answer(prompt=prompt)
                 answer_path = os.path.join(RESULTS_DIR, f"llm_answer_{ts}.txt")
                 with open(answer_path, "w", encoding="utf-8") as f:
                     f.write(answer or "No content returned.")
@@ -404,8 +563,7 @@ def orchestrate(question: str):
             except Exception as e:
                 print(f"[Orchestrator] LLM interpretation failed: {e}")
 
-        # Rückgabe im LLM-Modus: die rohen Ergebnisse (für Debug)
-        return {"question": question, "parsed": parsed, "llm_queries": queries, "cube_results": cube_results}, None
+        return raw_bundle, raw_path
 
     # ===== Deterministischer Modus (alter Flow) =====
     print("[Orchestrator] Running in deterministic mode (useLLM=False)")

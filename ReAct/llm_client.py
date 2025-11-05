@@ -3,8 +3,20 @@ import os
 from google import genai
 from google.genai import types
 from dotenv import load_dotenv
+import time
 
 load_dotenv()
+
+
+def _safe_call(fn, retries=3, delay=1.0):
+    for i in range(retries):
+        try:
+            return fn()
+        except Exception as e:
+            print(f"[GeminiClient] Attempt {i + 1}/{retries} failed: {e}")
+            time.sleep(delay)
+    return None
+
 
 class GeminiClient:
     def __init__(self, model="gemini-2.5-flash"):
@@ -15,14 +27,11 @@ class GeminiClient:
     def generate_answer(self, prompt: str, context: str = None) -> str:
         try:
             full_prompt = f"{prompt}\n\nContext:\n{context or ''}"
-            response = self.client.models.generate_content(
+            response = _safe_call(lambda: self.client.models.generate_content(
                 model=self.model_name,
-                contents=full_prompt,
-                config=types.GenerateContentConfig(
-                    max_output_tokens=2048,
-                    temperature=0.4
-                ),
-            )
+                contents=prompt,
+                config=types.GenerateContentConfig(max_output_tokens=2048, temperature=0.3),
+            ))
 
             if not response or not getattr(response, "candidates", None):
                 return "No content returned."
@@ -39,23 +48,25 @@ class GeminiClient:
 
         schema_text = json.dumps(schema, indent=2)
         prompt = f"""
-You are a Cube.js query generator.
-Given this schema and its valid values, create one or more JSON queries
-to answer the question: '{question}'.
+        You are a Cube.js query generator.
+        Given this schema and its valid values, create one or more **independent JSON objects**,
+        each answering part of the question: '{question}'.
 
-Rules:
-- Each query must be valid JSON.
-- If a comparison (like FY24 vs FY25) is required, output multiple queries separated by '|'.
-- Do NOT explain anything, only output queries.
-Schema:
-{schema_text}
-"""
+        Rules:
+        - Output ONLY raw JSON objects.
+        - Do NOT include markdown fences like ```json.
+        - Separate each object with a single pipe character: |
+        - Ensure every JSON object is syntactically complete and closed.
+        Schema:
+        {schema_text}
+        """
+
         try:
             response = self.client.models.generate_content(
                 model=self.model_name,
                 contents=prompt,
                 config=types.GenerateContentConfig(
-                    max_output_tokens=2048,
+                    max_output_tokens=3500,
                     temperature=0.3
                 ),
             )
@@ -77,7 +88,7 @@ Schema:
                 return []
 
             print("\n=== GEMINI RAW QUERY OUTPUT ===")
-            print(text)
+            print(parts)
             print("=== END RAW QUERY OUTPUT ===\n")
 
             queries = []
@@ -85,12 +96,16 @@ Schema:
                 part = part.strip()
                 if not part:
                     continue
+                part_fixed = part
+                if part_fixed.count("{") > part_fixed.count("}"):
+                    part_fixed += "}" * (part_fixed.count("{") - part_fixed.count("}"))
+
                 try:
-                    q = json.loads(part)
+                    q = json.loads(part_fixed)
                     queries.append(q)
                     print(f"[GeminiClient] Parsed Query #{i}: {json.dumps(q, indent=2)[:300]}...")
                 except json.JSONDecodeError:
-                    print(f"[GeminiClient] ⚠️ Skipped malformed query fragment #{i}: {part[:160]}")
+                    print(f"[GeminiClient] ⚠️ Skipped malformed query fragment #{i}: {part_fixed[:160]}")
 
             print(f"[GeminiClient] → Parsed {len(queries)} valid queries.\n")
             return queries
@@ -98,3 +113,4 @@ Schema:
         except Exception as e:
             print(f"[GeminiClient] Error generating queries: {e}")
             return []
+
