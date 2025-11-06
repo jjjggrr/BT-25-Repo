@@ -101,8 +101,21 @@ class GeminiClient:
                     part_fixed += "}" * (part_fixed.count("{") - part_fixed.count("}"))
 
                 try:
-                    q = json.loads(part_fixed)
+                    # Remove wrapping array if present (LLM sometimes outputs [ {...} ])
+                    part = part.strip()
+                    if part.startswith("[") and part.endswith("]"):
+                        try:
+                            parsed = json.loads(part)
+                            if isinstance(parsed, list) and len(parsed) == 1 and isinstance(parsed[0], dict):
+                                q = parsed[0]
+                            else:
+                                q = parsed
+                        except Exception:
+                            q = json.loads(part)
+                    else:
+                        q = json.loads(part)
                     queries.append(q)
+
                     print(f"[GeminiClient] Parsed Query #{i}: {json.dumps(q, indent=2)[:300]}...")
                 except json.JSONDecodeError:
                     print(f"[GeminiClient] ⚠️ Skipped malformed query fragment #{i}: {part_fixed[:160]}")
