@@ -11,7 +11,8 @@ from src.config import BUSINESS_UNITS
 bu_name_map = {bu["org_id"]: bu["business_unit_name"] for bu in BUSINESS_UNITS}
 
 def render_project_brief_pdf(meta: ProjectDocMeta, project: ProjectDef) -> Path:
-    fname = f"PRJ_{project.project_id}_{meta.fiscal_year}.pdf"
+    safe_name = project.name.replace(" ", "_").replace("/", "_").replace("(", "").replace(")", "")
+    fname = f"PRJ_{safe_name}_{meta.fiscal_year}.pdf"
     fpath = PDF_DIR / fname
 
     c = canvas.Canvas(str(fpath), pagesize=A4)

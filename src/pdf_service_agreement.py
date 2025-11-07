@@ -42,7 +42,9 @@ def render_service_agreement_pdf(
     app_name = app["app_name"]
     vendor = app["vendor"]
     service_name = _service_name_for_app(app_id)
-    fname = f"SLA_{app_id}_{fiscal_year}.pdf"
+    # sanitize app_name to file-safe format (remove spaces, slashes, parentheses)
+    safe_name = app_name.replace(" ", "_").replace("/", "_").replace("(", "").replace(")", "")
+    fname = f"SLA_{safe_name}_{fiscal_year}.pdf"
     fpath = PDF_DIR / fname
 
     doc = SimpleDocTemplate(

@@ -73,6 +73,7 @@ class Embedder:
                 "project_id": meta.get("ProjectID") or "UNKNOWN",
                 "business_unit": meta.get("BusinessUnit") or "UNKNOWN",
                 "section": section or "unspecified",
+                "file_name": pdf_name,
             }
 
             # Chroma akzeptiert keine None-Typen – sicherstellen, dass alles str/bool/float/int ist

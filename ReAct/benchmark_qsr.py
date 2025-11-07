@@ -24,7 +24,7 @@ from ReAct.cube_client import CubeClient
 # Beispiel:
 # SINGLE_RUN = ""          → alle Queries laufen (Standard)
 # SINGLE_RUN = "15,16"     → nur diese Query-Indizes (1-basiert)
-SINGLE_RUN = "17"
+SINGLE_RUN = ""
 
 # -------------------------------------------------------------------
 #  Benchmark Questions  (25 simple test queries)

@@ -404,7 +404,7 @@ def run_pipeline():
             )
             pdf_path = render_project_brief_pdf(meta, p)
             process_pdf_for_embedding(pdf_path, emb)
-            pdf_path.unlink(missing_ok=True)
+            #pdf_path.unlink(missing_ok=True)
 
     rprint("[bold green]Pipeline complete (PDFs parsed + embedded).[/bold green]")
 

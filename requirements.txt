@@ -1,8 +1,8 @@
 reportlab==4.4.4
-numpy==2.3.4
+numpy>=1.26.0
 pandas==2.3.2
 pydantic==2.11.1
-python-dateutil==2.9.0.post0
+python-dateutil~=2.9.0
 rich==14.1.0
 # Embedding + Vector DB (local, simple)
 sentence-transformers==5.1.0
@@ -10,6 +10,12 @@ torch==2.9.0
 chromadb==1.2.2
 duckdb~=1.4.1
 requests~=2.32.4
-pdfminer~=20191125
+pdfminer.six
 protobuf~=6.33.0
 python-dotenv~=1.2.1
+datasets~=4.4.1
+# Add these for RAGAS compatibility
+ragas==0.3.7
+langchain==1.0.0
+langchain-core==1.0.0
+langchain-openai==1.0.0
