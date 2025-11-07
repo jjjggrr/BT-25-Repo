@@ -38,7 +38,7 @@ class ChromaClient:
         # --- 1) Basissuche ---
         res = self.sa_col.query(
             query_texts=[query_text],
-            n_results=top_k * 3,  # erstmal mehr holen
+            n_results=top_k * 10,  # erstmal mehr holen
             where={"fiscal_year": fiscal_year} if fiscal_year else None,
         )
 
@@ -209,4 +209,12 @@ class ChromaClient:
 
         print(f"[ChromaClient] Returning {len(out)} contextual snippets.")
         return out
+
+    def list_docs(self, collection_name="service_agreements", limit=10):
+        col = self.sa_col if collection_name == "service_agreements" else self.prj_col
+        items = col.get(limit=limit)
+        print(f"[ChromaClient] Listing {len(items['ids'])} docs from {collection_name}:")
+        for i, m in enumerate(items["metadatas"][:limit]):
+            print(f"{i + 1:2d}. {m.get('file_name', '<no name>')} | {m.get('app_name')} | {m.get('fiscal_year')}")
+
 

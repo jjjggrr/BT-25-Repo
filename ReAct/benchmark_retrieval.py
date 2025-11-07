@@ -37,6 +37,11 @@ OUT_SUMMARY = os.path.join(BASE_DIR, f"retrieval_summary_{ts}.txt")
 # -------------------------------------------------------------------
 chroma = ChromaClient()
 
+print("\n[Retrieval] Verifying available documents in ChromaDB...")
+chroma.list_docs("service_agreements", limit=5)
+chroma.list_docs("project_briefs", limit=5)
+print("[Retrieval] Verification complete.\n")
+
 def get_all_docs(collection):
     items = collection.get()
     docs = []
@@ -77,17 +82,17 @@ QUESTIONS_AND_GOLDS = [
     ("How did HCM Platform costs change between FY24 and FY25?", "SLA_HCM_Platform_FY25.pdf"),
     ("Which applications saw the largest percentage increase in total cost in FY25?", "SLA_Applications_Summary_FY25.pdf"),
 
-    # --- Projects: Initiatives & Benefits ---
+    # --- Projects: Initiatives & Benefits (alle 10 existierenden Projekte) ---
     ("What were the objectives of the Data Center Refresh project?", "PRJ_Data_Center_Refresh_FY25.pdf"),
-    ("Which fiscal year did the Cloud Migration initiative start?", "PRJ_Cloud_Migration_FY24.pdf"),
-    ("What benefits were realized from the Digital Workplace program?", "PRJ_Digital_Workplace_FY25.pdf"),
+    ("What benefits were realized from the Modernize Endpoint project?", "PRJ_Modernize_Endpoint_FY25.pdf"),
+    ("Which departments were involved in the New Collaboration Suite project?", "PRJ_New_Collaboration_Suite_FY25.pdf"),
     ("What were the main deliverables of the ERP Upgrade project?", "PRJ_ERP_Upgrade_FY25.pdf"),
-    ("Which vendor was responsible for the Security Enhancement Program?", "PRJ_Security_Enhancement_Program_FY25.pdf"),
-    ("What was the budget allocation for the Customer Data Platform initiative in FY25?", "PRJ_Customer_Data_Platform_FY25.pdf"),
-    ("How did the DevOps Toolchain project impact operational efficiency?", "PRJ_DevOps_Toolchain_FY25.pdf"),
-    ("Which departments were affected by the CRM Modernization program?", "PRJ_CRM_Modernization_FY25.pdf"),
-    ("What was the planned timeline of the Network Transformation project?", "PRJ_Network_Transformation_FY25.pdf"),
-    ("Which KPIs were used to measure the Cloud Migration success?", "PRJ_Cloud_Migration_FY25.pdf"),
+    ("What were the security improvements in the Security Enhancement Program?", "PRJ_Security_Enhancement_Program_FY25.pdf"),
+    ("How did the Cloud Migration project improve infrastructure scalability?", "PRJ_Cloud_Migration_FY25.pdf"),
+    ("What automation results were achieved by the AI Automation Program?", "PRJ_AI_Automation_Program_FY25.pdf"),
+    ("What were the cost savings from the IT Budget Optimization project?", "PRJ_IT_Budget_Optimization_FY25.pdf"),
+    ("Which network segments were upgraded in the Network Transformation project?", "PRJ_Network_Transformation_FY25.pdf"),
+    ("Which business risks were mitigated through the Risk Reduction Initiative?", "PRJ_Risk_Reduction_Initiative_FY25.pdf"),
 
     # --- Comparative / Cross-Service ---
     ("Compare the total FY25 costs of Microsoft 365 and Google Workspace.", "SLA_Microsoft_365_FY25.pdf"),
@@ -110,21 +115,10 @@ QUESTIONS_AND_GOLDS = [
     ("What are the FY25 service-availability KPIs for HCM Platform?", "SLA_HCM_Platform_FY25.pdf"),
     ("Which SLA section describes vendor-escalation procedures?", "SLA_Summary_Terms_FY25.pdf"),
     ("What monitoring tools are referenced in the Enterprise Data Platform agreement?", "SLA_Enterprise_Data_Platform_FY25.pdf"),
-    ("How are change-management processes defined in SAP S4HANA SLA?", "SLA_SAP_S4HANA_Finance_FY25.pdf"),
+    ("How are change-management processes defined in SAP S4HANA SLA?", "SLA_SAP_S4HANA_FY25.pdf"),
     ("What are the disaster-recovery objectives for Oracle Database Platform in FY25?", "SLA_Oracle_Database_Platform_FY25.pdf"),
-
-    # --- Strategic & Executive ---
-    ("Which FY25 IT initiatives support the corporate sustainability goal?", "PRJ_Sustainability_Initiatives_FY25.pdf"),
-    ("What are the main cost-optimization measures introduced in FY25?", "PRJ_Cost_Optimization_FY25.pdf"),
-    ("How did digital-workplace projects contribute to FY25 productivity targets?", "PRJ_Digital_Workplace_FY25.pdf"),
-    ("Which FY25 programs focus on AI and automation?", "PRJ_AI_Automation_FY25.pdf"),
-    ("How does the IT portfolio align with business strategy in FY25?", "PRJ_IT_Portfolio_Strategy_FY25.pdf"),
-    ("Which FY25 initiatives reduce operational risk?", "PRJ_Risk_Reduction_FY25.pdf"),
-    ("How is the FY25 budget distributed across major projects?", "PRJ_IT_Budget_Distribution_FY25.pdf"),
-    ("Which projects are planned for decommissioning after FY25?", "PRJ_Project_Decommissioning_FY25.pdf"),
-    ("What is the overall IT spend trend from FY24 to FY25?", "PRJ_IT_Spending_Trend_FY25.pdf"),
-    ("What key lessons were learned from FY25 implementation reviews?", "PRJ_Implementation_Lessons_FY25.pdf"),
 ]
+
 
 
 # -------------------------------------------------------------------
@@ -134,10 +128,14 @@ def retrieve_bm25(query, top_k=10):
     scores = bm25.get_scores(query.split())
     return np.argsort(scores)[::-1][:top_k]
 
+print("[Retrieval] Precomputing dense embeddings for all docs...")
+doc_embeddings = [np.array(ef([text]))[0] for text in tqdm(texts, desc="Embedding docs")]
+
 def retrieve_dense(query, top_k=10):
-    qv = np.array(ef(query))
-    sims = [np.dot(qv, np.array(ef(text))) for text in texts]
+    qv = np.array(ef([query]))[0]
+    sims = [np.dot(qv, dv) for dv in doc_embeddings]
     return np.argsort(sims)[::-1][:top_k]
+
 
 def retrieve_hybrid(query, top_k=10):
     idx_dense = retrieve_dense(query, top_k * 2)

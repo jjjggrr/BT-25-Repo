@@ -22,6 +22,7 @@ class Embedder:
 
         # === 3) PersistentClient erstellen ===
         emb_path = Path(EMB_DIR)
+        print(f"[DEBUG] Using Chroma path: {emb_path.resolve()}")
         emb_path.mkdir(parents=True, exist_ok=True)
         self.client = chromadb.PersistentClient(path=str(emb_path))
 
@@ -55,6 +56,7 @@ class Embedder:
                 "fiscal_year": meta.get("FiscalYear"),
                 "service_id": meta.get("ServiceID"),
                 "app_name": meta.get("AppName"),
+                "file_name": pdf_name,
                 "section": section,
             }
             self.sa_col.add(

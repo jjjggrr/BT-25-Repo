@@ -193,7 +193,15 @@ PROJECTS = [
     {"project_id": "PRJ-A", "project_name": "Modernize Endpoint", "exists_fy24": True, "exists_fy25": True},
     {"project_id": "PRJ-B", "project_name": "Data Center Refresh", "exists_fy24": True, "exists_fy25": True},
     {"project_id": "PRJ-C", "project_name": "New Collaboration Suite", "exists_fy24": False, "exists_fy25": True},
+    {"project_id": "PRJ-D", "project_name": "Cloud Migration", "exists_fy24": True, "exists_fy25": True},
+    {"project_id": "PRJ-E", "project_name": "ERP Upgrade", "exists_fy24": True, "exists_fy25": True},
+    {"project_id": "PRJ-F", "project_name": "AI Automation Program", "exists_fy24": False, "exists_fy25": True},
+    {"project_id": "PRJ-G", "project_name": "Security Enhancement Program", "exists_fy24": True, "exists_fy25": True},
+    {"project_id": "PRJ-H", "project_name": "Network Transformation", "exists_fy24": True, "exists_fy25": True},
+    {"project_id": "PRJ-I", "project_name": "Risk Reduction Initiative", "exists_fy24": True, "exists_fy25": True},
+    {"project_id": "PRJ-J", "project_name": "IT Budget Optimization", "exists_fy24": False, "exists_fy25": True},
 ]
+
 
 DEFAULT_PRICE_DELTAS = {
     "SRV-DEV": -0.03,  # -3%
