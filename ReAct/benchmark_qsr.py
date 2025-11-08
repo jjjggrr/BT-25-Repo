@@ -74,16 +74,36 @@ schema_text = json.dumps(schema)
 # -------------------------------------------------------------------
 #  Helper functions
 # -------------------------------------------------------------------
-def check_schema_match(query_obj: dict) -> bool:
-    """prüft, ob alle Dimensions/Measures im Schema vorkommen"""
+def check_schema_match(query_obj: dict, schema: dict) -> bool:
     try:
-        q_str = json.dumps(query_obj)
-        for key in ["FctItCosts", "Dim"]:
-            if key in q_str:
-                return True
+        # 1. Measures prüfen
+        for m in query_obj.get("measures", []):
+            if m not in schema.get("measures", []):
+                print(f"[DEBUG] Invalid measure: {m}")
+                return False
+
+        # 2. Dimensions prüfen
+        for d in query_obj.get("dimensions", []):
+            if d not in schema.get("dimensions", []):
+                print(f"[DEBUG] Invalid dimension: {d}")
+                return False
+
+        # 3. Filter prüfen
+        for f in query_obj.get("filters", []):
+            member = f.get("member") or f.get("dimension")
+            op = f.get("operator")
+            if member and member not in schema.get("dimensions", []):
+                print(f"[DEBUG] Invalid filter member: {member}")
+                return False
+            if op and op not in schema.get("operators", ["equals", "in", "contains", "and"]):
+                print(f"[DEBUG] Invalid operator: {op}")
+                return False
+
+        return True
+    except Exception as e:
+        print(f"[DEBUG] Schema check error: {e}")
         return False
-    except Exception:
-        return False
+
 
 
 def try_execute_query(q: dict) -> bool:
