@@ -11,6 +11,7 @@ import time
 import pandas as pd
 from datetime import datetime
 from dotenv import load_dotenv
+import csv
 
 # --- Lokale Modelle ---
 from langchain_ollama import OllamaLLM
@@ -39,6 +40,7 @@ METRICS_PATH = os.path.join(BASE_DIR, f"ragas_metrics_{ts}.csv")
 RESULT_PATH = os.path.join(BASE_DIR, f"ragas_summary_{ts}.txt")
 QUERIES_PATH = os.path.join(BASE_DIR, f"ragas_queries_{ts}.txt")
 ANSWERS_PATH = os.path.join(BASE_DIR, f"ragas_answers_{ts}.txt")
+TIME_PATH = os.path.join(BASE_DIR, f"ragas_time_measurements_{ts}.csv")
 
 # -------------------------------------------------------------------
 #  Lokale LLM- und Embedding-Modelle
@@ -108,15 +110,53 @@ query_log = []   # für ragas_queries_<ts>.txt
 answer_log = []  # für ragas_answers_<ts>.txt
 dataset = {"question": [], "answer": [], "contexts": [], "ground_truth": []}
 
+time_records = []
+
 for i, (question, gold) in enumerate(QUESTIONS_AND_GOLDS, 1):
     print(f"\n[RAGAS] ({i}/{len(QUESTIONS_AND_GOLDS)}) Processing: {question}")
     try:
-        # orchestrate aufrufen (mit LLM aktiviert)
-        result, _ = orchestrate(question)
+        # (1) Benchmark-Startzeitpunkt
+        t_bench_start = time.time()
 
+        # (2) Orchestrator einmal aufrufen und Laufzeit messen
+        t_orch_start = time.time()
+        result, _ = orchestrate(question)  # LLM-Modus muss in orchestrator.py aktiv sein
+        t_orchestrator = time.time() - t_orch_start
+
+        # (3) Artefakte aus dem Orchestrator-Ergebnis
         cube_results = result.get("cube_results_raw") or result.get("subquery_results") or []
-        chroma_docs = result.get("context_docs") or []
-        llm_queries = result.get("llm_queries") or []
+        chroma_docs  = result.get("context_docs") or []
+        llm_queries  = result.get("llm_queries") or []
+        timings      = result.get("timing", {})
+        n_queries    = len(llm_queries)
+
+        # (4) Zeitpunkte zusammensetzen
+        record = {
+            "question": question,
+            "n_llm_queries": n_queries,
+            "t_total_benchmark": time.time() - t_bench_start,
+            "t_orchestrator": t_orchestrator,
+            "t_llm_gen_queries": timings.get("t_llm_gen_queries", 0.0),
+            "t_cube_exec": timings.get("t_cube_exec", 0.0),
+            "t_llm_interpretation": timings.get("t_llm_interpretation", 0.0),
+        }
+        time_records.append(record)
+
+        # (5) LLM-Antwort bestimmen (bevorzugt direkt aus result)
+        system_answer = result.get("answer")
+        if not system_answer:
+            # Fallback: jüngste llm_answer_*.txt aus results/ (nur wenn vorhanden)
+            try:
+                candidates = [f for f in os.listdir("results") if f.startswith("llm_answer_")]
+                candidates.sort(key=lambda f: os.path.getmtime(os.path.join("results", f)))
+                if candidates:
+                    with open(os.path.join("results", candidates[-1]), "r", encoding="utf-8") as f:
+                        system_answer = f.read().strip()
+            except Exception:
+                pass
+        if not system_answer:
+            # letzter Fallback: Cube-Rohdaten als Text
+            system_answer = json.dumps(cube_results, indent=2)
 
         # --------------------------------------------
         # LLM Answer ermitteln
@@ -165,6 +205,7 @@ for i, (question, gold) in enumerate(QUESTIONS_AND_GOLDS, 1):
     except Exception as e:
         print(f"[RAGAS] Error for {question}: {e}")
 
+
 # -------------------------------------------------------------------
 #  Kombinierte Logs schreiben
 # -------------------------------------------------------------------
@@ -174,6 +215,17 @@ with open(ANSWERS_PATH, "w", encoding="utf-8") as f:
     f.write("\n".join(answer_log))
 with open(DATASET_PATH, "w", encoding="utf-8") as f:
     json.dump(dataset, f, indent=2)
+with open(TIME_PATH, "w", newline="", encoding="utf-8") as csvfile:
+    fieldnames = [
+        "question", "n_llm_queries", "t_total_benchmark",
+        "t_orchestrator", "t_llm_gen_queries",
+        "t_cube_exec", "t_llm_interpretation"
+    ]
+    writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+    writer.writeheader()
+    writer.writerows(time_records)
+
+print(f"[RAGAS] Timing measurements saved to {TIME_PATH}")
 
 print(f"[RAGAS] Saved combined queries → {QUERIES_PATH}")
 print(f"[RAGAS] Saved combined answers → {ANSWERS_PATH}")

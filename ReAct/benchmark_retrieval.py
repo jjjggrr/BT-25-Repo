@@ -16,6 +16,7 @@ import pandas as pd
 from datetime import datetime
 from rank_bm25 import BM25Okapi
 from tqdm import tqdm
+import time
 
 from chromadb.utils import embedding_functions
 from langchain_huggingface import HuggingFaceEmbeddings
@@ -28,6 +29,8 @@ from ReAct.chroma_client import ChromaClient
 BASE_DIR = os.path.join("results", "Retrieval")
 os.makedirs(BASE_DIR, exist_ok=True)
 ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+OUT_TIMING = os.path.join(BASE_DIR, f"retrieval_timings_{ts}.csv")
+
 
 OUT_CSV = os.path.join(BASE_DIR, f"retrieval_results_{ts}.csv")
 OUT_SUMMARY = os.path.join(BASE_DIR, f"retrieval_summary_{ts}.txt")
@@ -153,13 +156,19 @@ def retrieve_hybrid(query, top_k=10):
 # -------------------------------------------------------------------
 records = []
 
+records = []
+timing_records = []
+
 for q, gold in tqdm(QUESTIONS_AND_GOLDS, desc="[Retrieval Benchmark]"):
     for method, retriever in {
         "BM25": retrieve_bm25,
         "Dense": retrieve_dense,
         "Hybrid": retrieve_hybrid,
     }.items():
+        t_start = time.time()
         idxs = retriever(q, top_k=10)
+        t_retrieval = time.time() - t_start
+
         ranked_titles = [titles[i] for i in idxs]
 
         found = any(gold.lower() in t.lower() for t in ranked_titles)
@@ -177,8 +186,19 @@ for q, gold in tqdm(QUESTIONS_AND_GOLDS, desc="[Retrieval Benchmark]"):
             "top_titles": ranked_titles,
         })
 
+        timing_records.append({
+            "question": q,
+            "method": method,
+            "retrieval_time_sec": round(t_retrieval, 4),
+            "found": found,
+            "rank": rank
+        })
+
 df = pd.DataFrame(records)
 df.to_csv(OUT_CSV, index=False)
+timing_df = pd.DataFrame(timing_records)
+timing_df.to_csv(OUT_TIMING, index=False)
+print(f"[Retrieval] Timing measurements saved to {OUT_TIMING}")
 
 # -------------------------------------------------------------------
 # Kennzahlen berechnen
