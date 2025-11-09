@@ -416,14 +416,13 @@ def orchestrate(question: str):
     timings = {}
     t_start = time.time()
 
+    # --- Startphase: Parsing & Setup zählen zum Overhead ---
     parsed = parse_question(question, VALID_VALUES)
     subqueries = split_into_subqueries(question, parsed)
 
-    # ===== LLM-MODUS: UNFORMATIERTES SAMMELN + CHROMA-KONTEXT =====
     if useLLM and GeminiClient is not None:
         print(f"[Orchestrator] Running in simplified LLM mode with Chroma context ({llm_mode})")
         from copy import deepcopy
-        timings["start_orchestrator"] = t_start
 
         schema = build_llm_schema()
         llm = GeminiClient(model="gemini-2.5-flash")
@@ -431,14 +430,17 @@ def orchestrate(question: str):
         chroma = ChromaClient()
         LLM_DEBUG = os.getenv("LLM_DEBUG", "false").lower() == "true"
 
-        # --- 1) Query-Generierung ---
+        # -------- 1) Query-Generierung durch LLM ----------
+        t_llm_start = time.time()
+        timings["t_before_llm_api"]= t_llm_start - t_start
         queries = []
         try:
             if llm_mode in ("generate_queries", "full"):
-                t_llm_start = time.time()
-                queries = llm.generate_queries(question, schema)
-                timings["t_llm_gen_queries"] = time.time() - t_llm_start
-
+                queries, t_info = llm.generate_queries(question, schema)
+                timings.update({
+                    "t_llm_api_1": t_info.get("t_llm_api_1", 0),
+                    "t_llm_parse_queries": t_info.get("t_llm_parse_queries", 0)
+                })
                 print(f"[Orchestrator] LLM generated {len(queries)} Cube.js queries.")
                 if LLM_DEBUG:
                     os.makedirs(RESULTS_DIR, exist_ok=True)
@@ -449,25 +451,24 @@ def orchestrate(question: str):
         except Exception as e:
             print(f"[Orchestrator] LLM query generation failed: {e}")
 
-        # --- 2) Cube.js-Abfragen ausführen ---
-        raw_results = []
-        query_times = []
+        # -------- 2) Cube.js-Ausführung ----------
         t_cube_start = time.time()
+        raw_results, query_times = [], []
         for i, q in enumerate(queries, 1):
             try:
-                t_single = time.time()
+                t_qs = time.time()
                 print(f"[Orchestrator] Executing Cube.js query #{i}: {q}")
                 for f in q.get("filters", []) or []:
                     if "member" in f and "dimension" not in f:
                         f["dimension"] = f.pop("member")
                 df = cube.query(deepcopy(q))
-                query_times.append(time.time() - t_single)
                 raw_results.append({
                     "query_index": i,
                     "query": q,
                     "rows": df.to_dict(orient="records"),
                     "columns": df.columns.tolist(),
                 })
+                query_times.append(time.time() - t_qs)
             except Exception as e:
                 print(f"[Orchestrator] Failed query #{i}: {e}")
                 query_times.append(None)
@@ -475,15 +476,14 @@ def orchestrate(question: str):
         timings["t_cube_exec"] = time.time() - t_cube_start
         timings["cube_query_times"] = query_times
 
-        # --- 3) Kontext aus ChromaDB holen ---
+        # -------- 3) Kontext (Chroma) ----------
+        t_chroma_start = time.time()
         chroma_docs = []
         try:
             parsed_llm = parse_question(question, VALID_VALUES)
             fy_old = parsed_llm.get("fy_old") or parsed.get("fy_old") or "FY24"
             fy_new = parsed_llm.get("fy_new") or parsed.get("fy_new") or "FY25"
-            org = parsed_llm.get("org") or parsed.get("org") or "Corporate"
             service = parsed_llm.get("service") or parsed.get("service")
-            service_dim = parsed_llm.get("service_dimension") or parsed.get("service_dimension")
 
             if not service:
                 for q in queries:
@@ -491,7 +491,6 @@ def orchestrate(question: str):
                         val = (f.get("values") or [None])[0]
                         if f.get("member") in ["DimApp.appName", "DimService.serviceName"] and val:
                             service = val
-                            print(f"[Orchestrator] Auto-detected service from LLM query: {service}")
                             break
                     if service:
                         break
@@ -507,32 +506,33 @@ def orchestrate(question: str):
                     max_snippets=6,
                     max_chars_per_snippet=320,
                 )
-                print(f"[Orchestrator] Retrieved {len(chroma_docs)} contextual documents from ChromaDB.")
             else:
-                query_text = f"General IT cost overview for {fy_new}"
-                chroma_docs = chroma.query(question=query_text, top_k=5)
-                print(f"[Orchestrator] Retrieved {len(chroma_docs)} generic context documents.")
+                chroma_docs = chroma.query(question=f"General IT cost overview for {fy_new}", top_k=5)
         except Exception as e:
             print(f"[Orchestrator] ChromaDB retrieval failed: {e}")
             chroma_docs = []
+        t_chroma_end = time.time()
 
-        # --- 4) Zweiter LLM-Aufruf (Interpretation mit Kontext) ---
+        # -------- 4) Antwort-Generierung (2. LLM) ----------
+        t_ans_start = time.time()
         answer = None
         if llm_mode in ("interpret_results", "full") and raw_results:
-            t_ans_start = time.time()
-            prompt = (
-                "You are an IT cost analyst.\n"
-                f"Question:\n{question}\n\n"
-                "Below are raw Cube.js query results and retrieved contextual documents.\n"
-                "Analyze them together to identify top cost drivers, year-over-year changes, "
-                "and root causes for cost differences.\n\n"
-                f"RAW RESULTS:\n{json.dumps(raw_results, indent=2)}\n\n"
-                f"CONTEXT DOCS:\n{json.dumps(chroma_docs, indent=2)}\n\n"
-                "Provide a concise, factual summary."
-            )
             try:
-                answer = llm.generate_answer(prompt=prompt)
-                timings["t_llm_interpretation"] = time.time() - t_ans_start
+                prompt = (
+                    "You are an IT cost analyst.\n"
+                    f"Question:\n{question}\n\n"
+                    "Below are raw Cube.js query results and retrieved contextual documents.\n"
+                    "Analyze them together to identify top cost drivers, year-over-year changes, "
+                    "and root causes for cost differences.\n\n"
+                    f"RAW RESULTS:\n{json.dumps(raw_results, indent=2)}\n\n"
+                    f"CONTEXT DOCS:\n{json.dumps(chroma_docs, indent=2)}\n\n"
+                    "Provide a concise, factual summary."
+                )
+                answer, t_info = llm.generate_answer(prompt=prompt)
+                timings.update({
+                    "t_llm_api_2": t_info.get("t_llm_api_2", 0),
+                    "t_llm_postprocess_answer": t_info.get("t_llm_postprocess_answer", 0)
+                })
                 ts = int(time.time())
                 answer_path = os.path.join(RESULTS_DIR, f"llm_answer_{ts}.txt")
                 with open(answer_path, "w", encoding="utf-8") as f:
@@ -541,8 +541,32 @@ def orchestrate(question: str):
             except Exception as e:
                 print(f"[Orchestrator] LLM interpretation failed: {e}")
 
-        timings["total"] = time.time() - t_start
+        # -------- 5) Overhead & Gesamtzeit ----------
+        t_end = time.time()
 
+        # Alle relevanten LLM- und Systemzeiten summieren
+        llm_total = (
+                timings.get("t_llm_api_1", 0)
+                + timings.get("t_llm_parse_queries", 0)
+                + timings.get("t_llm_api_2", 0)
+                + timings.get("t_llm_postprocess_answer", 0)
+        )
+
+        # interner Overhead = alles, was nicht LLM oder Cube ist (z. B. Parsing, Chroma, Logging)
+        sum_known = (
+                timings.get("t_before_llm_api", 0)
+                + timings.get("t_llm_api_1", 0)
+                + timings.get("t_llm_parse_queries", 0)
+                + timings.get("t_cube_exec", 0)
+                + timings.get("t_llm_api_2", 0)
+                + timings.get("t_llm_postprocess_answer", 0)
+        )
+        timings["t_internal_overhead"] = max(0, t_end - t_start - sum_known)
+
+        # Gesamtzeit für orchestrate()
+        timings["total"] = t_end - t_start
+
+        # Bundle aus allen Ergebnissen + Timings
         raw_bundle = {
             "question": question,
             "llm_queries": queries,
@@ -552,6 +576,7 @@ def orchestrate(question: str):
             "timing": timings,
         }
 
+        # Speichern der Ergebnisse
         ts = int(time.time())
         raw_path = os.path.join(RESULTS_DIR, f"raw_llm_cube_results_{ts}.json")
         os.makedirs(RESULTS_DIR, exist_ok=True)
@@ -560,7 +585,6 @@ def orchestrate(question: str):
         print(f"[Orchestrator] Saved raw Cube.js + Chroma results to {raw_path}")
 
         return raw_bundle, raw_path
-
 
     # ===== Deterministischer Modus (alter Flow) =====
     print("[Orchestrator] Running in deterministic mode (useLLM=False)")

@@ -121,25 +121,37 @@ for i, (question, gold) in enumerate(QUESTIONS_AND_GOLDS, 1):
         # (2) Orchestrator einmal aufrufen und Laufzeit messen
         t_orch_start = time.time()
         result, _ = orchestrate(question)  # LLM-Modus muss in orchestrator.py aktiv sein
-        t_orchestrator = time.time() - t_orch_start
+
 
         # (3) Artefakte aus dem Orchestrator-Ergebnis
         cube_results = result.get("cube_results_raw") or result.get("subquery_results") or []
         chroma_docs  = result.get("context_docs") or []
         llm_queries  = result.get("llm_queries") or []
         timings      = result.get("timing", {})
+        t_llm_gen_queries = timings.get("t_llm_api_1", 0)
+        t_llm_interpretation = timings.get("t_llm_api_2", 0)
+        # Overhead-Blöcke dem Orchestrator zuschlagen
+        t_orchestrator = (
+                timings.get("t_before_llm_api", 0)  # das fügen wir unten hinzu
+                + timings.get("t_llm_parse_queries", 0)
+                + timings.get("t_llm_postprocess_answer", 0)
+                + timings.get("t_internal_overhead", 0)
+        )
+
+        t_cube_exec = timings.get("t_cube_exec", 0)
         n_queries    = len(llm_queries)
 
         # (4) Zeitpunkte zusammensetzen
         record = {
             "question": question,
-            "n_llm_queries": n_queries,
+            "n_llm_queries": len(result.get("llm_queries") or []),
             "t_total_benchmark": time.time() - t_bench_start,
             "t_orchestrator": t_orchestrator,
-            "t_llm_gen_queries": timings.get("t_llm_gen_queries", 0.0),
-            "t_cube_exec": timings.get("t_cube_exec", 0.0),
-            "t_llm_interpretation": timings.get("t_llm_interpretation", 0.0),
+            "t_llm_gen_queries": t_llm_gen_queries,
+            "t_cube_exec": t_cube_exec,
+            "t_llm_interpretation": t_llm_interpretation,
         }
+
         time_records.append(record)
 
         # (5) LLM-Antwort bestimmen (bevorzugt direkt aus result)
@@ -230,6 +242,7 @@ print(f"[RAGAS] Timing measurements saved to {TIME_PATH}")
 print(f"[RAGAS] Saved combined queries → {QUERIES_PATH}")
 print(f"[RAGAS] Saved combined answers → {ANSWERS_PATH}")
 print(f"[RAGAS] Saved dataset          → {DATASET_PATH}")
+
 
 # -------------------------------------------------------------------
 #  Evaluate (lokales LLM + lokale Embeddings wie im Reevaluate)
