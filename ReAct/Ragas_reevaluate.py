@@ -18,7 +18,7 @@ from langchain_huggingface import HuggingFaceEmbeddings
 #  Load config
 # -------------------------------------------------------------------
 load_dotenv()
-DATASET_FILE = "results/RAGAS/ragas_dataset_20251107_210225.json"
+DATASET_FILE = "results/RAGAS/ragas_dataset_20251109_172942.json"
 BASE_DIR = "results/RAGAS"
 os.makedirs(BASE_DIR, exist_ok=True)
 ts = datetime.now().strftime("%Y%m%d_%H%M%S")
