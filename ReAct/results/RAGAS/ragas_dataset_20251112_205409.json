@@ -1,0 +1,143 @@
+{
+  "question": [
+    "What are the top 5 cost drivers for the Customer Service business unit in FY25?",
+    "Show total IT costs for the Manufacturing unit in FY24.",
+    "Compare total IT spending for the Finance organization between FY24 and FY25.",
+    "Which business unit had the highest total IT costs in FY25?",
+    "What are the main cost drivers for the HR organization in FY25?",
+    "How did total IT costs for the Marketing unit change from FY24 to FY25?",
+    "List the top 3 applications by cost for the Procurement unit in FY25.",
+    "What is the total IT spending for the R&D unit in FY25?",
+    "Show total IT costs per business unit for FY24.",
+    "Compare IT costs for Corporate and Finance in FY25.",
+    "What was the total cost of Microsoft 365 in FY25?",
+    "Compare Microsoft Teams costs between FY24 and FY25.",
+    "How did SAP ERP Platform costs change for Corporate from FY24 to FY25?",
+    "Show total spending on Jira Software in FY25.",
+    "What are the 3 most expensive services for the United States in FY25?",
+    "Compare ServiceNow license costs FY24 vs FY25 for the IT unit.",
+    "Which Microsoft App is the most expensive in FY25?",
+    "What were the total ServiceNow Platform costs for the Finance organization in FY25?",
+    "How much was spent on Snowflake in FY25 compared to FY24?",
+    "Show IT spending on the Oracle Database Platform for FY25.",
+    "Show total IT cost by country for FY25.",
+    "Which country had the highest IT spending in FY25?",
+    "Compare IT spending between Germany and United States in FY25.",
+    "What is the total cost for Europe region in FY25?",
+    "How did total costs for the United States change between FY24 and FY25?"
+  ],
+  "answer": [
+    "The top 5 cost drivers for the Customer Service business unit in FY25, based on actual IT costs, are primarily driven by IT services:\n\n1.  **ALM / Dev Collaboration:** $1,546,505.20\n2.  **Enterprise Data Platform:** $1,393,600.6\n3.  **HCM Platform:** $1,186,216.83\n4.  **Intranet / Portal:** $1,129,849.14\n5.  **ERP Procurement Platform:** $946,825.64\n\nWhile specific applications also contribute to costs, the services listed above represent the highest aggregated expenditures for the Customer Service business unit in FY25.\n\n*Note: Information regarding year-over-year changes and root causes for cost differences cannot be determined from the provided data.*",
+    "Total IT costs for the Manufacturing unit in FY24 are $11,279,186.12.",
+    "Total IT spending for the Finance organization increased from FY24 to FY25.\n\n*   **FY24 Total IT Spending:** $16,748,080.32\n*   **FY25 Total IT Spending:** $17,000,194.28\n\nThis represents an increase of **$252,113,96**, or approximately **1.5%**, from FY24 to FY25.",
+    "In FY25, the **Procurement** business unit had the highest total IT costs, amounting to **17,163,702.35**.\n\nWhile the specific root cause for Procurement's top position in FY25 is not explicitly detailed, contextual documents indicate a general 5.00% price increase for Microsoft 365 licenses in FY25 due to vendor adjustments. Additionally, the Procurement unit utilizes SAP S/4HANA, which in FY24 focused on stability and operational excellence with its cost structure aligned to a global vendor framework agreement.",
+    "The main IT cost drivers for the HR organization in FY25 are:\n\n1.  **Applications Tower:** This is the dominant cost category, accounting for approximately **$11.26 million** of the total IT spend.\n2.  **RUN Costs:** Over 99% of HR's IT spend in FY25, totaling approximately **$16.83 million**, is allocated to \"RUN\" activities, indicating a primary focus on maintaining existing systems rather than new projects or enhancements.\n3.  **Top Services:** The most significant individual service cost drivers are:\n    *   **ALM / Dev Collaboration:** ~$1.93 million\n    *   **Enterprise Data Platform:** ~$1.74 million\n    *   **HCM Platform:** ~$1.48 million\n    *   **Intranet / Portal:** ~$1.39 million\n    *   **ERP Procurement Platform:** ~$1.18 million\n    *   **Identity & Access Mgmt:** ~$1.17 million\n    *   **Collaboration:** ~$1.14 million\n\n**Year-over-Year Changes and Root Causes:**\n\n*   **Microsoft 365 related services (e.g., Collaboration, Intranet/Portal):** Costs for these services may have increased by **5.00%** in FY25 compared to FY24. This change is attributed to vendor pricing adjustments or a new license model for Microsoft 365.\n*   **ERP Procurement Platform:** The cost structure for this platform is aligned with a global vendor framework agreement. Any cost changes are likely driven by the terms of this agreement rather than major feature additions or internal changes.\n*   A substantial portion of the HR IT spend (approximately $16.83 million) is currently categorized as **\"Unassigned IT Project,\"** which aligns with the high \"RUN\" cost. This indicates a lack of granular project-level cost allocation for operational expenses.",
+    "Total IT costs for the Marketing unit (Sales & Marketing) increased from FY24 to FY25.\n\n*   **FY24 Total IT Costs:** $13,549,852.13\n*   **FY25 Total IT Costs:** $13,725,013.27\n*   **Change:** An increase of $175,161.14\n*   **Percentage Change:** A 1.29% increase",
+    "The top 3 applications by cost for the Procurement unit in FY25 are:\n\n1.  **Snowflake Data Cloud**: \\$870,691.96\n2.  **Enterprise Data Lake**: \\$869,486.28\n3.  **Microsoft SharePoint Online**: \\$865,391.80",
+    "The total IT spending for the Research & Development (R&D) unit in FY25 is **7,472,680.95**.\n\n**Analysis:**\n*   **Top Cost Drivers & Root Causes:** While the overall IT landscape in FY25 includes a 5.00% price increase for Microsoft 365 (due to vendor pricing adjustment or new license model), the specific impact of this on R&D's total IT spending cannot be determined from the provided data. No other specific top cost drivers for R&D's IT spending are identified.\n*   **Year-over-Year Changes:** Comparative data for R&D's IT spending in FY24 is not available, therefore, year-over-year changes for the R&D unit's total IT spending cannot be calculated.",
+    "Here are the total IT costs per business unit for FY24:\n\n**Total IT Costs per Business Unit (FY24)**\n\n| Business Unit             | Total IT Cost (EUR) |\n| :------------------------ | :------------------ |\n| Procurement               | 16,926,415.86       |\n| Corporate                 | 16,846,861.73       |\n| IT & Digital              | 16,756,609.94       |\n| Finance & Controlling     | 16,748,080.32       |\n| Human Resources           | 16,725,690.89       |\n| Sales & Marketing         | 13,549,852.13       |\n| Customer Services         | 13,492,265.47       |\n| Manufacturing Operations  | 11,279,186.12       |\n| Supply Chain & Logistics  | 9,894,030.29        |\n| Research & Development    | 7,304,306.85        |\n| **Grand Total**           | **139,523,299.80**  |\n\n**Analysis:**\n\n*   **Top Cost Drivers (FY24):** Procurement, Corporate, IT & Digital, Finance & Controlling, and Human Resources are the top five business units by IT spend, each incurring over \u20ac16.7 million in FY24. Procurement leads with the highest cost at \u20ac16.93 million.\n*   **Year-over-Year Changes:** The provided data only includes FY24 costs, so year-over-year changes cannot be determined.\n*   **Root Causes for Cost Differences:** The provided context documents do not offer specific reasons for the cost differences between business units in FY24. One document notes that SAP S/4HANA Finance focused on stability and operational excellence in FY24 with minor performance optimizations and aligned cost structure, suggesting no major new cost drivers from that system. Another document mentions a +5.00% price change for Microsoft 365 in FY25 compared to FY24, which is relevant for future analysis but does not explain FY24 differences.",
+    "In FY25, the IT costs for Corporate were $17,034,694.04, while Finance & Controlling's IT costs were $17,000,194.28. Corporate's IT costs were marginally higher than Finance & Controlling by approximately $34,500.",
+    "The total cost of Microsoft 365 in FY25 was **4,707,291.69**.\n\nThis cost reflects a 5.00% price increase compared to FY24, attributed to vendor pricing adjustments or a new license model. The billing currency for Microsoft 365 is EUR.",
+    "Microsoft Teams costs increased by **15.45%** from FY24 to FY25, rising from **\u20ac4,085,368.58** in FY24 to **\u20ac4,716,886.72** in FY25, an absolute increase of **\u20ac631,518.14**.\n\nThe primary cost driver identified is a **5.00% vendor pricing adjustment** compared to FY24, attributed to a vendor pricing adjustment or a new license model. Given that the pricing basis is per user per month, the total cost increase exceeding the 5% vendor price change suggests an additional increase in the number of users or a shift to higher-tier licenses.",
+    "SAP ERP Platform costs for Corporate decreased slightly by $5,565.78, from $2,258,812.64 in FY24 to $2,253,246.86 in FY25.\n\n**Key Changes by Platform:**\n*   **ERP Procurement Platform:** Decreased by $2,893.11 (from $1,187,874.01 to $1,184,980.90).\n*   **ERP Sales Platform:** Decreased by $2,565.60 (from $577,149.46 to $574,583.86).\n*   **ERP Finance Platform:** Decreased by $107.07 (from $493,789.17 to $493,682.10).\n\n**Top Cost Drivers:**\nIn both fiscal years, the **ERP Procurement Platform** remained the largest cost driver, followed by the ERP Sales Platform and ERP Finance Platform.\n\n**Root Causes:**\nThe provided contextual documents pertain to the \"Palo Alto Security Platform\" and do not offer insights into the cost changes for the SAP ERP Platform. Therefore, specific root causes for these minor cost decreases cannot be identified from the given information.",
+    "Total spending on Jira Software in FY25 was $5,333,048.26.",
+    "The 3 most expensive services for the United States in FY25 are:\n\n1.  **ALM / Dev Collaboration**: $1,543,182.00\n2.  **Intranet / Portal**: $1,391,457.17\n3.  **Enterprise Data Platform**: $1,389,348.47",
+    "ServiceNow license costs for the IT unit are projected to decrease slightly from FY24 to FY25.\n\n*   **FY24 Cost:** $486,371.19\n*   **FY25 Cost:** $482,639.17",
+    "The most expensive Microsoft App in FY25 is **Microsoft SharePoint Online**, with an actual cost of **7,196,287.57**.",
+    "The total ServiceNow Platform costs for the Finance organization in FY25 were **$484,973.63**.",
+    "Spending on Snowflake was **$7,214,861.20 in FY25** compared to **$7,217,537.54 in FY24**. This represents a slight decrease of $2,676.34 (0.04%) in FY25.",
+    "IT spending on the Oracle Database Platform for FY25 is **$6,677,959.08**.",
+    "Here is the total IT cost by country for FY25:\n\n| Country         | Total IT Cost (FY25) |\n| :-------------- | :------------------- |\n| GERMANY         | \u20ac20,341,512.58       |\n| ITALY           | \u20ac15,260,385.23       |\n| UNITED STATES   | \u20ac14,942,322.75       |\n| MEXICO          | \u20ac14,281,530.20       |\n| BRAZIL          | \u20ac14,273,245.88       |\n| CANADA          | \u20ac12,285,466.91       |\n| FRANCE          | \u20ac11,764,300.35       |\n| NETHERLANDS     | \u20ac11,763,073.66       |\n| POLAND          | \u20ac11,115,188.91       |\n| SPAIN           | \u20ac10,963,862.03       |\n| CHINA           | \u20ac2,870,746.89        |\n| ARGENTINA       | \u20ac1,428,923.19        |\n\n**Analysis:**\n\n*   **Top Cost Drivers:** Germany, Italy, and the United States are the top three countries by IT cost in FY25.\n*   **Year-over-Year Changes:** A significant cost driver identified for FY25 is a **5.00% price increase for Microsoft 365** compared to FY24, due to vendor pricing adjustments or a new license model. This increase is billed in EUR, which could particularly impact Eurozone countries like Germany, Italy, France, Netherlands, Poland, and Spain.\n*   **Root Causes for Cost Differences:** While the Microsoft 365 price increase is a general factor, the specific cost differences between countries (e.g., Germany being significantly higher than Italy, or the US being higher than Canada) are not explicitly detailed in the provided documents. These differences likely stem from variations in user count, IT infrastructure scale, local vendor contracts, and specific project initiatives within each country. The SAP S/4HANA Procurement costs for FY24 were aligned with a global vendor framework, suggesting a stable cost structure for that service, but no specific FY25 changes or country-level impacts are mentioned.",
+    "Germany had the highest IT spending in FY25, with an actual cost of 20,341,512.58.",
+    "In FY25, Germany's IT spending is projected to be **$20,341,512.58**, which is significantly higher than the United States' projected spending of **$14,942,322.75**. Germany's IT costs are approximately 36.1% greater than those of the United States.\n\n**Key Cost Drivers & Year-over-Year Changes:**\n*   **Microsoft 365:** A notable cost driver for FY25 is a **5.00% price increase** for Microsoft 365 compared to FY24. This adjustment is attributed to vendor pricing changes or new license models.\n*   **SAP S/4HANA Procurement:** For FY24, SAP S/4HANA Procurement costs remained stable with no major feature additions or significant changes to the cost structure, which was aligned with a global vendor framework agreement. No specific changes for FY25 are indicated in the provided context for this area.\n\n**Root Causes for Cost Differences:**\nWhile the Microsoft 365 price increase is a general trend, the provided documents do not offer specific root causes for the substantial difference in total IT spending between Germany and the United States. Further analysis would be required to understand factors such as user base, specific project portfolios, or local market conditions contributing to this disparity.",
+    "The total cost for the Europe (EMEA) region in FY25 is **81,208,322.76**.",
+    "Total IT costs for the United States increased from **$14,765,239.78** in FY24 to **$14,942,322.75** in FY25, representing an increase of **$177,082.97**."
+  ],
+  "contexts": [
+    [],
+    [],
+    [],
+    [
+      "[FY25 | Microsoft 365 | pricing] (score=0.548)\n4. Pricing & Financial Model\n\nPricingBasis: per_user_month\nPriceChange: D +5.00% vs FY24\nRationale: Vendor pricing adjustment or new license model.\nBillingCurrency: EUR",
+      "[FY24 | SAP S/4HANA Procurement | changes] (score=0.642)\n6. Change History & FY Comparison\n\nNo major feature additions; focus on stability and operational excellence. Minor performance optimizations\nintroduced in Q2 of the fiscal year. Cost structure aligned with global vendor framework agreement."
+    ],
+    [
+      "[FY25 | Microsoft 365 | pricing] (score=0.548)\n4. Pricing & Financial Model\n\nPricingBasis: per_user_month\nPriceChange: D +5.00% vs FY24\nRationale: Vendor pricing adjustment or new license model.\nBillingCurrency: EUR",
+      "[FY24 | SAP S/4HANA Procurement | changes] (score=0.642)\n6. Change History & FY Comparison\n\nNo major feature additions; focus on stability and operational excellence. Minor performance optimizations\nintroduced in Q2 of the fiscal year. Cost structure aligned with global vendor framework agreement."
+    ],
+    [],
+    [],
+    [
+      "[FY25 | Microsoft 365 | pricing] (score=0.548)\n4. Pricing & Financial Model\n\nPricingBasis: per_user_month\nPriceChange: D +5.00% vs FY24\nRationale: Vendor pricing adjustment or new license model.\nBillingCurrency: EUR",
+      "[FY24 | SAP S/4HANA Procurement | changes] (score=0.642)\n6. Change History & FY Comparison\n\nNo major feature additions; focus on stability and operational excellence. Minor performance optimizations\nintroduced in Q2 of the fiscal year. Cost structure aligned with global vendor framework agreement."
+    ],
+    [
+      "[FY25 | Microsoft 365 | pricing] (score=0.517)\n4. Pricing & Financial Model\n\nPricingBasis: per_user_month\nPriceChange: D +5.00% vs FY24\nRationale: Vendor pricing adjustment or new license model.\nBillingCurrency: EUR",
+      "[FY24 | SAP S/4HANA Finance | changes] (score=0.602)\n6. Change History & FY Comparison\n\nNo major feature additions; focus on stability and operational excellence. Minor performance optimizations\nintroduced in Q2 of the fiscal year. Cost structure aligned with global vendor framework agreement."
+    ],
+    [],
+    [
+      "[FY25 | Microsoft 365 | pricing] (score=0.468)\n4. Pricing & Financial Model\nPricingBasis: per_user_month\nPriceChange: D +5.00% vs FY24\nRationale: Vendor pricing adjustment or new license model.\nBillingCurrency: EUR"
+    ],
+    [
+      "[FY25 | Microsoft Teams | pricing] (score=0.506)\n4. Pricing & Financial Model\nPricingBasis: per_user_month\nPriceChange: D +5.00% vs FY24\nRationale: Vendor pricing adjustment or new license model.\nBillingCurrency: EUR"
+    ],
+    [
+      "[FY24 | Palo Alto Security Platform | changes] (score=0.463)\n6. Change History & FY Comparison\nNo major feature additions; focus on stability and operational excellence. Minor performance optimizations\nintroduced in Q2 of the fiscal year. Cost structure aligned with global vendor framework agreement.",
+      "[FY25 | Palo Alto Security Platform | changes] (score=0.463)\n6. Change History & FY Comparison\nNo major feature additions; focus on stability and operational excellence. Minor performance optimizations\nintroduced in Q2 of the fiscal year. Cost structure aligned with global vendor framework agreement."
+    ],
+    [],
+    [],
+    [],
+    [
+      "[FY25 | Microsoft Teams | pricing] (score=0.506)\n4. Pricing & Financial Model\nPricingBasis: per_user_month\nPriceChange: D +5.00% vs FY24\nRationale: Vendor pricing adjustment or new license model.\nBillingCurrency: EUR"
+    ],
+    [],
+    [],
+    [],
+    [
+      "[FY25 | Microsoft 365 | pricing] (score=0.548)\n4. Pricing & Financial Model\n\nPricingBasis: per_user_month\nPriceChange: D +5.00% vs FY24\nRationale: Vendor pricing adjustment or new license model.\nBillingCurrency: EUR",
+      "[FY24 | SAP S/4HANA Procurement | changes] (score=0.642)\n6. Change History & FY Comparison\n\nNo major feature additions; focus on stability and operational excellence. Minor performance optimizations\nintroduced in Q2 of the fiscal year. Cost structure aligned with global vendor framework agreement."
+    ],
+    [
+      "[FY25 | Microsoft 365 | pricing] (score=0.548)\n4. Pricing & Financial Model\n\nPricingBasis: per_user_month\nPriceChange: D +5.00% vs FY24\nRationale: Vendor pricing adjustment or new license model.\nBillingCurrency: EUR",
+      "[FY24 | SAP S/4HANA Procurement | changes] (score=0.642)\n6. Change History & FY Comparison\n\nNo major feature additions; focus on stability and operational excellence. Minor performance optimizations\nintroduced in Q2 of the fiscal year. Cost structure aligned with global vendor framework agreement."
+    ],
+    [
+      "[FY25 | Microsoft 365 | pricing] (score=0.548)\n4. Pricing & Financial Model\n\nPricingBasis: per_user_month\nPriceChange: D +5.00% vs FY24\nRationale: Vendor pricing adjustment or new license model.\nBillingCurrency: EUR",
+      "[FY24 | SAP S/4HANA Procurement | changes] (score=0.642)\n6. Change History & FY Comparison\n\nNo major feature additions; focus on stability and operational excellence. Minor performance optimizations\nintroduced in Q2 of the fiscal year. Cost structure aligned with global vendor framework agreement."
+    ],
+    [
+      "[FY25 | Microsoft 365 | pricing] (score=0.548)\n4. Pricing & Financial Model\n\nPricingBasis: per_user_month\nPriceChange: D +5.00% vs FY24\nRationale: Vendor pricing adjustment or new license model.\nBillingCurrency: EUR",
+      "[FY24 | SAP S/4HANA Procurement | changes] (score=0.642)\n6. Change History & FY Comparison\n\nNo major feature additions; focus on stability and operational excellence. Minor performance optimizations\nintroduced in Q2 of the fiscal year. Cost structure aligned with global vendor framework agreement."
+    ],
+    []
+  ],
+  "ground_truth": [
+    "The top 5 cost drivers for the Customer Service business unit in FY are: ALM / Dev Collaboration 1,546,505.20; Enterprise Data Platform 1,393,600.595; HCM Platform 1,186,216.825; Intranet / Portal 1,129,849.136; ERP Procurement Platform 946,825.638",
+    "Total cost of the Manufacturing unit in FY24 was 11,279,186.118",
+    "The Finance Organisation spent 16,748,080.32 in FY24 and 17,000,194.281 in FY25",
+    "The Procurement Business Unit had the highest cost with 17,163,702.347",
+    "The main cost drivers for the HR organisations in FY25 are: Applications 11,268,715.455; Security 1,890,875.282; Workplace 1,735,542.496; Hosting / Compute 1,691,662.181; Network 247,194.479; Change 80,576.07",
+    "The IT costs from the Marketing Unit increased from 13,549,852.133 in FY24 to 13,725,013.274 in FY25",
+    "Top 3 applications for the Procurement business unit in FY25: Snowflake Data Cloud 870,691.957; Enterprise Data Lake 869,486.28;  Microsoft SharePoint Online 865,391.799",
+    "The total IT spending for the Research and Development unit in FY25 was 7,472,680.947.",
+    "In FY24, the total IT costs per business unit were as follows: Procurement 16,926,415.855; Corporate 16,846,861.726; IT & Digital 16,756,609.937; Finance & Controlling 16,748,080.32; Human Resources 16,725,690.895; Sales & Marketing 13,549,852.133; Customer Services 13,492,265.474; Manufacturing Operations 11,279,186.118; Supply Chain & Logistics 9,894,030.293; and Research & Development 7,304,306.852.",
+    "In FY25, the Corporate unit had IT costs of 17,034,694.035, while the Finance & Controlling unit spent 17,000,194.281.",
+    "The total cost of Microsoft 365 in FY25 was 4,707,291.688.",
+    "The cost of Microsoft Teams increased from 4,085,368.576 in FY24 to 4,716,886.717 in FY25.",
+    "For the Corporate business unit, ERP Procurement Platform costs decreased slightly from 1,187,874.006 in FY24 to 1,184,980.896 in FY25. The ERP Finance Platform costs remained constant with 493,789.168 in FY24 to 493,682.103 in FY25, while the ERP Sales Platform decreased from 577,149.456 in FY24 to 574,583.856 in FY25.",
+    "The total spending on Jira Software in FY25 was 5,333,048.258.",
+    "The three most expensive services in FY25 for the United States are ALM / Dev Collaboration 1,543,182.002, Intranet / Portal 1,391,457.172, Enterprise Data Platform 1,389,348.47",
+    "For the IT unit, ServiceNow license costs were 486,371.189 in FY24 and slightly decreased to 482,639.167 in FY25.",
+    "The most expensive Microsoft application in FY25 was Microsoft SharePoint Online, with total costs of 7,196,287.571.",
+    "The total ServiceNow Platform costs for the Finance organization in FY25 amounted to 484,973.625.",
+    "Spending on Snowflake was 7,217,537.538 in FY24 and slightly decreased to 7,214,861.2 in FY25.",
+    "The total IT spending on the Oracle Database Platform in FY25 was 6,677,959.079.",
+    "In FY25, total IT costs by country were as follows: Germany 20,341,512.58; Italy 15,260,385.23; United States 14,942,322.75; Mexico 14,281,530.2; Brazil 14,273,245.88; Canada 12,285,466.91; France 11,764,300.35; Netherlands 11,763,073.66; Poland 11,115,188.91; Spain 10,963,862.03; China 2,870,746.88; and Argentina 1,428,923.18.",
+    "Germany had the highest IT spending in FY25, totaling 20,341,512.58.",
+    "In FY25, Germany spent 20,341,512.58 on IT, while the United States spent 14,942,322.751.",
+    "The total IT cost for the Europe region in FY25 was 81,208,322.76.",
+    "Total IT costs for the United States increased from 14,765,239.78 in FY24 to 14,942,322.75 in FY25."
+  ]
+}

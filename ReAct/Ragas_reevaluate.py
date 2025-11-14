@@ -18,7 +18,7 @@ from langchain_huggingface import HuggingFaceEmbeddings
 #  Load config
 # -------------------------------------------------------------------
 load_dotenv()
-DATASET_FILE = "results/RAGAS/ragas_dataset_20251109_172942.json"
+DATASET_FILE = "results/RAGAS/ragas_dataset_20251112_192244.json"
 BASE_DIR = "results/RAGAS"
 os.makedirs(BASE_DIR, exist_ok=True)
 ts = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -38,8 +38,8 @@ ragas_ds = Dataset.from_dict(dataset_dict)
 # -------------------------------------------------------------------
 #  Configure LOCAL model + embeddings
 # -------------------------------------------------------------------
-print("[RAGAS] Using local model (mistral:7b-instruct  7B Q4 via Ollama)")
-llm = OllamaLLM(model="mistral:7b-instruct")
+print("[RAGAS] Using local model (mistral:7b-instruct 7B Q4 via Ollama)")
+llm = OllamaLLM(model="mistral:7b-instruct",)
 
 # Local embeddings (MiniLM-L6-v2 is light and accurate for RAGAS)
 print("[RAGAS] Using local embedding model (MiniLM-L6-v2)")

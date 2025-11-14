@@ -79,12 +79,12 @@ QUESTIONS_AND_GOLDS = [
      "For the Corporate business unit, ERP Procurement Platform costs decreased slightly from 1,187,874.006 in FY24 to 1,184,980.896 in FY25. The ERP Finance Platform costs remained constant with 493,789.168 in FY24 to 493,682.103 in FY25, while the ERP Sales Platform decreased from 577,149.456 in FY24 to 574,583.856 in FY25."),
     ("Show total spending on Jira Software in FY25.",
      "The total spending on Jira Software in FY25 was 5,333,048.258."),
-    ("What are the top 3 applications with the highest cost increase in FY25?",
-     "The three applications with the largest cost increases in FY25 were Microsoft Teams, Microsoft 365, and Unassigned IT Application."),
+    ("What are the 3 most expensive services for the United States in 2025?",
+     "The three most expensive services in 2025 for the United States are ALM / Dev Collaboration 1,543,182.002, Intranet / Portal 1,391,457.172, Enterprise Data Platform 1,389,348.47"),
     ("Compare ServiceNow license costs FY24 vs FY25 for the IT unit.",
-     "For the IT unit, ServiceNow license costs were 483,532.296 in FY24 and slightly decreased to 482,144.203 in FY25."),
+     "For the IT unit, ServiceNow license costs were 486,371.189 in FY24 and slightly decreased to 482,639.167 in FY25."),
     ("Which Microsoft App is the most expensive in FY25?",
-     "The most expensive Microsoft application in FY25 was Microsoft SharePoint Online, with total costs of 7,181,517.111."),
+     "The most expensive Microsoft application in FY25 was Microsoft SharePoint Online, with total costs of 7,196,287.571."),
     ("What were the total ServiceNow Platform costs for the Finance organization in FY25?",
      "The total ServiceNow Platform costs for the Finance organization in FY25 amounted to 484,973.625."),
     ("How much was spent on Snowflake in FY25 compared to FY24?",
@@ -243,7 +243,7 @@ print(f"[RAGAS] Saved combined queries → {QUERIES_PATH}")
 print(f"[RAGAS] Saved combined answers → {ANSWERS_PATH}")
 print(f"[RAGAS] Saved dataset          → {DATASET_PATH}")
 
-
+'''
 # -------------------------------------------------------------------
 #  Evaluate (lokales LLM + lokale Embeddings wie im Reevaluate)
 # -------------------------------------------------------------------
@@ -291,4 +291,4 @@ try:
 
 except Exception as e:
     print(f"[RAGAS] Evaluation failed: {e}")
-
+'''

@@ -12,6 +12,7 @@ from cube_client import CubeClient
 from chroma_client import ChromaClient
 from config import RESULTS_DIR
 from cube_meta import load_schema_cache, build_llm_schema
+from schema_context_filter import extract_relevant_schema_context
 
 # Optional: LLM-Client (nur genutzt, wenn USE_LLM=true)
 try:
@@ -425,6 +426,9 @@ def orchestrate(question: str):
         from copy import deepcopy
 
         schema = build_llm_schema()
+        # -------------- PREMATCHING ----------------
+        #reduced_schema = extract_relevant_schema_context(question, schema_cache=schema, verbose=False)
+        #schema = reduced_schema
         llm = GeminiClient(model="gemini-2.5-flash")
         cube = CubeClient()
         chroma = ChromaClient()
